@@ -1,57 +1,40 @@
-import type { Dir, InputState } from './commands';
+import { tuning } from '../../config/tuning';
+import type { Button, InputState } from './commands';
 
-// Keyboard, touch and browser-level input guards (GDD §3).
+// Keyboard and mouse (GDD §3).
 
-const KEY_DIRS: Record<string, Dir> = {
-  KeyW: 'up',
-  ArrowUp: 'up',
-  KeyS: 'down',
-  ArrowDown: 'down',
+const KEY_BUTTONS: Record<string, Button> = {
+  KeyW: 'forward',
+  ArrowUp: 'forward',
+  KeyS: 'back',
+  ArrowDown: 'back',
   KeyA: 'left',
   ArrowLeft: 'left',
   KeyD: 'right',
   ArrowRight: 'right',
+  Space: 'dash',
 };
-
-const ACTION_KEYS = new Set(['Space', 'Enter']);
 
 function isTextField(target: EventTarget | null): boolean {
   return target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement;
 }
 
-/** A movement press steps once; the simulation repeats while the key is held. */
+/** Held keys set `input.held`; a fresh press also queues a `press` command. */
 export function attachKeyboard(input: InputState, target: Window = window): () => void {
-  const down: Dir[] = [];
-  const sync = () => input.setHeld(down[down.length - 1] ?? null);
-
   const onDown = (e: KeyboardEvent) => {
     if (isTextField(e.target)) return;
-    if (ACTION_KEYS.has(e.code)) {
-      e.preventDefault();
-      if (!e.repeat) input.push({ type: 'action' });
-      return;
-    }
-    const dir = KEY_DIRS[e.code];
-    if (!dir) return;
+    const button = KEY_BUTTONS[e.code];
+    if (!button) return;
     e.preventDefault();
-    if (e.repeat) return; // OS auto-repeat is ignored; the simulation handles hold repeat.
-    const i = down.indexOf(dir);
-    if (i >= 0) down.splice(i, 1);
-    down.push(dir);
-    input.push({ type: 'move', dir });
-    sync();
+    if (e.repeat) return;
+    input.held[button] = true;
+    input.push({ type: 'press', button });
   };
   const onUp = (e: KeyboardEvent) => {
-    const dir = KEY_DIRS[e.code];
-    if (!dir) return;
-    const i = down.indexOf(dir);
-    if (i >= 0) down.splice(i, 1);
-    sync();
+    const button = KEY_BUTTONS[e.code];
+    if (button) input.held[button] = false;
   };
-  const onBlur = () => {
-    down.length = 0;
-    sync();
-  };
+  const onBlur = () => input.releaseAll();
 
   target.addEventListener('keydown', onDown);
   target.addEventListener('keyup', onUp);
@@ -63,61 +46,52 @@ export function attachKeyboard(input: InputState, target: Window = window): () =
   };
 }
 
-/**
- * Placeholder touch scheme until the GDD defines the real controls:
- * a swipe anywhere on `el` is one step, a tap is `action`.
- * Reacts on pointerup, so feedback is not immediate: replace it.
- */
-export function attachSwipe(input: InputState, el: HTMLElement, minPx = 24): () => void {
-  let start: { id: number; x: number; y: number } | null = null;
-  const onDown = (e: PointerEvent) => {
-    if (!start) start = { id: e.pointerId, x: e.clientX, y: e.clientY };
-  };
-  const onUp = (e: PointerEvent) => {
-    if (!start || e.pointerId !== start.id) return;
-    const dx = e.clientX - start.x;
-    const dy = e.clientY - start.y;
-    start = null;
-    if (Math.max(Math.abs(dx), Math.abs(dy)) < minPx) {
-      input.push({ type: 'action' });
-      return;
-    }
-    const dir: Dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up';
-    input.push({ type: 'move', dir });
-  };
-  const onCancel = () => {
-    start = null;
-  };
-  el.addEventListener('pointerdown', onDown);
-  el.addEventListener('pointerup', onUp);
-  el.addEventListener('pointercancel', onCancel);
-  return () => {
-    el.removeEventListener('pointerdown', onDown);
-    el.removeEventListener('pointerup', onUp);
-    el.removeEventListener('pointercancel', onCancel);
-  };
+export interface MouseLook {
+  readonly locked: boolean;
+  detach(): void;
 }
 
 /**
- * Keeps the browser from turning in-game swipes into its own gestures
- * (back/forward navigation, pull-to-refresh). Touch moves are cancelled
- * everywhere except inside scrollable UI.
+ * A click queues `confirm` and grabs Pointer Lock; losing the lock queues
+ * `pause`, regaining it `resume` (GDD §3, §14.1). Mouse motion turns
+ * `input.look` right in the event handler, so the next render frame already
+ * shows it (GDD §3.2).
  */
-export function blockBrowserGestures(doc: Document = document): void {
-  const allowScroll = (t: EventTarget | null) => t instanceof Element && t.closest('.debug-panel') !== null;
-  doc.addEventListener(
-    'touchmove',
-    (e) => {
-      if (e.cancelable && !allowScroll(e.target)) e.preventDefault();
-    },
-    { passive: false },
-  );
-  // Multi-finger touches never zoom or navigate.
-  doc.addEventListener(
-    'touchstart',
-    (e) => {
-      if (e.touches.length > 1 && e.cancelable) e.preventDefault();
-    },
-    { passive: false },
-  );
+export function attachMouseLook(input: InputState, el: HTMLElement): MouseLook {
+  const look: MouseLook = { locked: false, detach };
+
+  const request = () => {
+    // Raw input without OS acceleration where the browser supports it.
+    // Chrome refuses a re-lock right after Esc: the player clicks again.
+    const p = el.requestPointerLock({ unadjustedMovement: true }) as Promise<void> | undefined;
+    p?.catch(() => (el.requestPointerLock() as Promise<void> | undefined)?.catch(() => undefined));
+  };
+  const onClick = () => {
+    input.push({ type: 'confirm' });
+    if (document.pointerLockElement !== el) request();
+  };
+  const onLockChange = () => {
+    const locked = document.pointerLockElement === el;
+    (look as { locked: boolean }).locked = locked;
+    if (!locked) input.releaseAll();
+    input.push({ type: locked ? 'resume' : 'pause' });
+  };
+  const onMove = (e: MouseEvent) => {
+    if (document.pointerLockElement !== el) return;
+    const s = tuning.player.MOUSE_SENSITIVITY;
+    const limit = (tuning.camera.PITCH_LIMIT * Math.PI) / 180;
+    input.look.yaw -= e.movementX * s;
+    input.look.pitch = Math.min(limit, Math.max(-limit, input.look.pitch - e.movementY * s));
+  };
+
+  el.addEventListener('click', onClick);
+  document.addEventListener('pointerlockchange', onLockChange);
+  document.addEventListener('mousemove', onMove);
+
+  function detach(): void {
+    el.removeEventListener('click', onClick);
+    document.removeEventListener('pointerlockchange', onLockChange);
+    document.removeEventListener('mousemove', onMove);
+  }
+  return look;
 }

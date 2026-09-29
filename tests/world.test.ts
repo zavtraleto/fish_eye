@@ -1,62 +1,121 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_TUNING, mergeTuning, secondsToTicks as T, tuning } from '../src/config/tuning';
-import type { Command, Dir } from '../src/core/input/commands';
+import { isBetterRun } from '../src/sim/run';
 import { World } from '../src/sim/world';
+import { idle, walk } from './helpers';
 
-function step(world: World, commands: Command[] = [], held: Dir | null = null, times = 1): void {
-  for (let i = 0; i < times; i++) world.step({ commands: i === 0 ? commands : [], held });
+const playing = () => new World({ seed: 1, startState: 'PLAYING' });
+
+/** Runs the green line to the EYE, then back along it to the white wall. */
+function clearLevel(w: World): void {
+  walk(w, w.level.route, () => w.phase === 'ESCAPE');
+  const wall = w.level.startWall;
+  const back = [...w.level.route].reverse();
+  back.push({ x: (wall.ax + wall.bx) / 2, z: (wall.az + wall.bz) / 2 });
+  walk(w, back, () => w.state !== 'PLAYING');
 }
 
-describe('World (greybox demo)', () => {
+describe('run loop (GDD §2, §14)', () => {
   beforeEach(() => mergeTuning(tuning, JSON.parse(JSON.stringify(DEFAULT_TUNING))));
 
-  it('moves one cell per command and ignores input mid-step', () => {
+  it('waits on the title until a click', () => {
     const w = new World({ seed: 1 });
-    const x = w.player.x;
-    step(w, [{ type: 'move', dir: 'left' }]);
-    expect(w.player.x).toBe(x - 1);
-    step(w, [{ type: 'move', dir: 'left' }]);
-    expect(w.player.x).toBe(x - 1);
-    step(w, [], null, T(tuning.player.MOVE_TIME));
-    step(w, [{ type: 'move', dir: 'left' }]);
-    expect(w.player.x).toBe(x - 2);
-  });
-
-  it('bumps at the edge', () => {
-    const w = new World({ seed: 1 });
-    step(w, [{ type: 'move', dir: 'down' }]);
-    expect(w.events).toContainEqual({ type: 'bumped', x: w.player.x, y: w.player.y });
-  });
-
-  it('repeats a held direction after the delay', () => {
-    const w = new World({ seed: 1 });
-    const y = w.player.y;
-    step(w, [{ type: 'move', dir: 'up' }], 'up');
-    step(w, [], 'up', T(tuning.player.HOLD_REPEAT_DELAY) - 1);
-    expect(w.player.y).toBe(y - 1);
-    step(w, [], 'up', 1);
-    expect(w.player.y).toBe(y - 2);
-  });
-
-  it('collects the pip and emits an event', () => {
-    const w = new World({ seed: 1 });
-    w.pip = { x: w.player.x, y: w.player.y - 1 };
-    step(w, [{ type: 'move', dir: 'up' }]);
-    expect(w.score).toBe(1);
-    expect(w.events.some((e) => e.type === 'pickup')).toBe(true);
-  });
-
-  it('is deterministic for a seed', () => {
-    const a = new World({ seed: 99 });
-    const b = new World({ seed: 99 });
-    expect(a.pip).toEqual(b.pip);
-  });
-
-  it('freezes gameplay time while paused', () => {
-    const w = new World({ seed: 1 });
-    w.state = 'PAUSED';
-    step(w, [{ type: 'move', dir: 'up' }], null, 10);
+    idle(w, 10);
+    expect(w.state).toBe('TITLE');
     expect(w.tick).toBe(0);
-    expect(w.uiTick).toBe(10);
+    idle(w, 1, [{ type: 'confirm' }]);
+    expect(w.state).toBe('PLAYING');
+    expect(w.events).toContainEqual({ type: 'runStarted' });
+  });
+
+  it('takes the EYE on touch and switches to ESCAPE', () => {
+    const w = playing();
+    walk(w, w.level.route, () => w.phase === 'ESCAPE');
+    expect(w.phase).toBe('ESCAPE');
+    expect(w.events).toContainEqual({ type: 'eyeTaken', level: 1 });
+    expect(w.inwardTicks).toBeGreaterThan(0);
+  });
+
+  it('ignores the white wall during INWARD', () => {
+    const w = playing();
+    const wall = w.level.startWall;
+    walk(w, [{ x: (wall.ax + wall.bx) / 2, z: (wall.az + wall.bz) / 2 }], () => false, 1);
+    expect(w.state).toBe('PLAYING');
+    expect(w.phase).toBe('INWARD');
+  });
+
+  it('clears the level at the white wall and starts the next after LEVEL_CLEAR_TIME', () => {
+    const w = playing();
+    clearLevel(w);
+    expect(w.state).toBe('LEVEL_CLEAR');
+    expect(w.run.eyesExtracted).toBe(1);
+    expect(w.run.bestEscapeTicks).toBe(w.escapeTicks);
+    const cleared = w.events.find((e) => e.type === 'levelCleared');
+    expect(cleared).toMatchObject({ level: 1, escapeTime: w.escapeTicks / tuning.sim.SIM_HZ });
+
+    const runTicks = w.run.runTicks;
+    idle(w, T(tuning.run.LEVEL_CLEAR_TIME) - 1);
+    expect(w.state).toBe('LEVEL_CLEAR');
+    expect(w.run.runTicks).toBe(runTicks);
+    idle(w, 1);
+    expect(w.state).toBe('PLAYING');
+    expect(w.levelNumber).toBe(2);
+    expect(w.phase).toBe('INWARD');
+    expect(w.player.x).toBe(w.level.spawn.x);
+  });
+
+  it('freezes gameplay and state timers while paused', () => {
+    const w = playing();
+    idle(w, 5);
+    idle(w, 1, [{ type: 'pause' }]);
+    expect(w.state).toBe('PAUSED');
+    const { tick, stateTicks } = w;
+    idle(w, 30, [{ type: 'confirm' }]);
+    expect(w.state).toBe('PAUSED');
+    expect(w.tick).toBe(tick);
+    expect(w.stateTicks).toBe(stateTicks);
+    idle(w, 1, [{ type: 'resume' }]);
+    expect(w.state).toBe('PLAYING');
+    expect(w.tick).toBe(tick + 1);
+  });
+
+  it('pauses the level clear screen too', () => {
+    const w = playing();
+    clearLevel(w);
+    idle(w, 1, [{ type: 'pause' }]);
+    idle(w, T(tuning.run.LEVEL_CLEAR_TIME) * 2);
+    expect(w.state).toBe('PAUSED');
+    idle(w, 1, [{ type: 'resume' }]);
+    expect(w.state).toBe('LEVEL_CLEAR');
+  });
+
+  it('dies, then accepts a restart only after collapse and lockout', () => {
+    const w = playing();
+    idle(w, 3);
+    w.kill();
+    expect(w.state).toBe('DEAD');
+    expect(w.events).toContainEqual({ type: 'died' });
+    const wait = T(tuning.run.DEATH_COLLAPSE_TIME + tuning.run.RESTART_LOCKOUT);
+    idle(w, wait - 1, [{ type: 'confirm' }]);
+    expect(w.canRestart).toBe(false);
+    expect(w.events.some((e) => e.type === 'restartRequested')).toBe(false);
+    idle(w, 1);
+    expect(w.canRestart).toBe(true);
+    idle(w, 1, [{ type: 'press', button: 'dash' }]);
+    expect(w.events).toContainEqual({ type: 'restartRequested' });
+  });
+
+  it('god mode survives a kill', () => {
+    const w = new World({ seed: 1, startState: 'PLAYING', cheats: { god: true } });
+    w.kill();
+    expect(w.state).toBe('PLAYING');
+  });
+
+  it('ranks runs by EYES, then by time', () => {
+    const r = (eyes: number, runTime: number) => ({ seed: 0, eyes, runTime, version: '' });
+    expect(isBetterRun(r(3, 100), r(2, 10))).toBe(true);
+    expect(isBetterRun(r(2, 9), r(2, 10))).toBe(true);
+    expect(isBetterRun(r(2, 11), r(2, 10))).toBe(false);
+    expect(isBetterRun(r(0, 1), null)).toBe(true);
   });
 });

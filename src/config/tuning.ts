@@ -9,22 +9,70 @@ export const DEFAULT_TUNING = {
     MAX_FRAME_TIME: 0.25,
     TIME_SCALE: 1,
   },
-  /** Greybox demo: delete with the demo (src/sim/world.ts). */
+  /** GDD §3.1 */
   player: {
-    MOVE_TIME: 0.12,
-    /** A held key keeps stepping after this delay. */
-    HOLD_REPEAT_DELAY: 0.25,
+    MOVE_SPEED: 15,
+    /** m/s² toward the wished velocity while a move key is held. */
+    ACCEL: 130,
+    /** m/s² toward rest with no move key held. */
+    FRICTION: 90,
+    RADIUS: 0.35,
+    /** Render only. */
+    EYE_HEIGHT: 1.9,
+    /** Radians per mouse pixel. */
+    MOUSE_SENSITIVITY: 0.0022,
+    /** Longest collision substep, meters: keeps any speed from tunneling through a wall. */
+    SUBSTEP: 0.1,
   },
-  field: {
-    GRID_W: 5,
-    GRID_H: 7,
+  /** GDD §4: vertex fisheye. */
+  camera: {
+    /** Horizontal field of view, degrees. */
+    H_FOV: 180,
+    /** equidistant / stereographic */
+    MAPPING: 'stereographic',
+    PITCH_LIMIT: 85,
+    NEAR: 0.05,
+    FAR: 60,
   },
   view: {
-    /** Upper bound on devicePixelRatio: the cheapest way to keep 60 FPS on phones. */
-    MAX_PIXEL_RATIO: 2,
-    CAMERA_FOV: 35,
-    CAMERA_PITCH: 55,
-    PICKUP_FLASH_TIME: 0.2,
+    /** Upper bound on devicePixelRatio. */
+    MAX_PIXEL_RATIO: 1,
+    /** Canvas resolution relative to the window, upscaled without smoothing. */
+    INTERNAL_SCALE: 0.75,
+    FOG_NEAR: 5,
+    FOG_FAR: 20,
+    /** World geometry is cut into quads this long: the fisheye bends only vertices. */
+    MESH_SEGMENT: 1,
+  },
+  /** GDD §10 */
+  start: {
+    /** Spawn distance from the white wall. */
+    SPAWN_DISTANCE: 1.5,
+    /** The white wall counts as touched within RADIUS + this. */
+    TOUCH_MARGIN: 0.1,
+  },
+  /** GDD §10 */
+  eye: {
+    /** Touch radius on the floor plane. */
+    RADIUS: 1.2,
+    /** Render only: sphere radius, meters. */
+    SIZE: 1.2,
+    /** Render only. */
+    HEIGHT: 2.4,
+    /** Render only, rad/s. */
+    SPIN: 0.8,
+  },
+  /** GDD §10: render only. */
+  route: {
+    LINE_WIDTH: 0.15,
+    LINE_LIFT: 0.03,
+  },
+  /** GDD §14 */
+  run: {
+    LEVEL_CLEAR_TIME: 1.0,
+    DEATH_COLLAPSE_TIME: 0.8,
+    /** After the result appears, before a click or Space restarts. */
+    RESTART_LOCKOUT: 0.5,
   },
 };
 

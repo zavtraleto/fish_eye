@@ -1,13 +1,18 @@
-import { secondsToTicks, tuning } from '../config/tuning';
-import { DIR_VECTORS, type Command, type Dir } from '../core/input/commands';
-import { Rng } from '../core/rng';
+import { secondsToTicks as T, tuning } from '../config/tuning';
+import type { Command, HeldButtons } from '../core/input/commands';
 import type { SimEvent } from './events';
+import { buildLevel } from './level/build';
+import { closestOnSegment } from './level/geometry';
+import { fixedLayout } from './level/fixed';
+import type { Level } from './level/level';
+import { createPlayer, stepPlayer, type Player } from './player';
+import { newRunStats, type RunStats } from './run';
 
 // Pure simulation (GDD §15.1): no DOM, no Three.js, no Math.random().
-// The greybox demo (a player stepping on a grid, collecting pips) proves the
-// pipeline; replace it with the real game.
+// The run loop of GDD §2 and §14 on the fixed test level (plan task 2).
 
-export type WorldState = 'PLAYING' | 'PAUSED';
+export type WorldState = 'TITLE' | 'PLAYING' | 'LEVEL_CLEAR' | 'DEAD' | 'PAUSED';
+export type Phase = 'INWARD' | 'ESCAPE';
 
 export interface Cheats {
   god: boolean;
@@ -16,113 +21,139 @@ export interface Cheats {
 export interface WorldOptions {
   seed: number;
   cheats?: Cheats;
+  /** A restart skips the title (GDD §14.3). */
+  startState?: 'TITLE' | 'PLAYING';
 }
 
 export interface StepInput {
   commands: readonly Command[];
-  held: Dir | null;
-}
-
-export interface Player {
-  x: number;
-  y: number;
-  /** Cell the current step started from; render interpolates from it. */
-  fromX: number;
-  fromY: number;
-  moveStartTick: number;
-  moveTicks: number;
+  held: HeldButtons;
+  /** Current view yaw, radians (GDD §15.1): movement is relative to it. */
+  yaw: number;
 }
 
 export class World {
   readonly seed: number;
   readonly cheats: Cheats;
-  /** One forked stream per system, so adding a roll in one never shifts another. */
-  readonly rngSpawn: Rng;
-  state: WorldState = 'PLAYING';
+  state: WorldState;
+  phase: Phase = 'INWARD';
   /** Advances only while PLAYING; gameplay timers use it. */
   tick = 0;
   /** Always advances; UI and state timers use it. */
   uiTick = 0;
-  score = 0;
-  readonly player: Player;
-  pip: { x: number; y: number };
+  /** Ticks since the current state began; stands still while PAUSED. */
+  stateTicks = 0;
+  levelNumber = 1;
+  level!: Level;
+  player!: Player;
+  /** Current level's INWARD and ESCAPE times, ticks. */
+  inwardTicks = 0;
+  escapeTicks = 0;
+  readonly run: RunStats = newRunStats();
   readonly events: SimEvent[] = [];
-  private heldSince = -1;
+  private resumeState: WorldState = 'PLAYING';
 
   constructor(opts: WorldOptions) {
     this.seed = opts.seed;
     this.cheats = opts.cheats ?? { god: false };
-    this.rngSpawn = new Rng(opts.seed).fork('spawn');
-    const x = Math.floor(tuning.field.GRID_W / 2);
-    const y = tuning.field.GRID_H - 1;
-    this.player = { x, y, fromX: x, fromY: y, moveStartTick: 0, moveTicks: 0 };
-    this.pip = this.spawnPip();
+    this.state = opts.startState ?? 'TITLE';
+    this.startLevel(1);
+    if (this.state === 'PLAYING') this.events.push({ type: 'runStarted' });
   }
 
   get simFrozen(): boolean {
     return this.state !== 'PLAYING';
   }
 
+  /** The death screen accepts a restart (GDD §14.3). */
+  get canRestart(): boolean {
+    return this.state === 'DEAD' && this.stateTicks >= T(tuning.run.DEATH_COLLAPSE_TIME + tuning.run.RESTART_LOCKOUT);
+  }
+
   step(input: StepInput): void {
     this.uiTick++;
-    if (this.state !== 'PLAYING') return;
+    for (const cmd of input.commands) this.command(cmd);
+    if (this.state !== 'PAUSED') this.stateTicks++;
+
+    if (this.state === 'PLAYING') this.play(input);
+    else if (this.state === 'LEVEL_CLEAR' && this.stateTicks >= T(tuning.run.LEVEL_CLEAR_TIME)) {
+      this.startLevel(this.levelNumber + 1);
+      this.setState('PLAYING');
+    }
+  }
+
+  /** Contact with the enemy (GDD §11.7). */
+  kill(): void {
+    if (this.state !== 'PLAYING' || this.cheats.god) return;
+    this.setState('DEAD');
+    this.events.push({ type: 'died' });
+  }
+
+  private command(cmd: Command): void {
+    const s = this.state;
+    if (cmd.type === 'pause' && (s === 'PLAYING' || s === 'LEVEL_CLEAR')) {
+      this.resumeState = s;
+      this.state = 'PAUSED';
+      this.events.push({ type: 'paused' });
+    } else if (cmd.type === 'resume' && s === 'PAUSED') {
+      this.state = this.resumeState;
+      this.events.push({ type: 'resumed' });
+    } else if (cmd.type === 'confirm' && s === 'TITLE') {
+      this.setState('PLAYING');
+      this.events.push({ type: 'runStarted' });
+    } else if ((cmd.type === 'confirm' || (cmd.type === 'press' && cmd.button === 'dash')) && this.canRestart) {
+      this.events.push({ type: 'restartRequested' });
+    }
+  }
+
+  private setState(state: WorldState): void {
+    this.state = state;
+    this.stateTicks = 0;
+  }
+
+  private startLevel(n: number): void {
+    this.levelNumber = n;
+    this.level = buildLevel(fixedLayout());
+    const { x, z } = this.level.spawn;
+    this.player = createPlayer(x, z);
+    this.phase = 'INWARD';
+    this.inwardTicks = 0;
+    this.escapeTicks = 0;
+    this.events.push({ type: 'levelStarted', level: n });
+  }
+
+  private play(input: StepInput): void {
     this.tick++;
-    for (const cmd of input.commands) {
-      if (cmd.type === 'move') this.tryMove(cmd.dir);
-    }
-    this.holdRepeat(input.held, input.commands);
-  }
+    this.run.runTicks++;
+    if (this.phase === 'INWARD') this.inwardTicks++;
+    else this.escapeTicks++;
 
-  /** Progress 0..1 of the current step; `alpha` is the render interpolation. */
-  moveProgress(alpha: number): number {
     const p = this.player;
-    if (p.moveTicks === 0) return 1;
-    return Math.min(1, (this.tick - p.moveStartTick + alpha) / p.moveTicks);
-  }
+    stepPlayer(p, input.held, input.yaw, this.level.walls, 1 / tuning.sim.SIM_HZ);
+    this.run.distanceTravelled += Math.hypot(p.x - p.prevX, p.z - p.prevZ);
 
-  private isMoving(): boolean {
-    return this.tick - this.player.moveStartTick < this.player.moveTicks;
-  }
-
-  private holdRepeat(held: Dir | null, commands: readonly Command[]): void {
-    if (!held) {
-      this.heldSince = -1;
-      return;
+    if (this.phase === 'INWARD') {
+      const eye = this.level.eye;
+      if (Math.hypot(p.x - eye.x, p.z - eye.z) < tuning.player.RADIUS + tuning.eye.RADIUS) {
+        this.phase = 'ESCAPE';
+        this.events.push({ type: 'eyeTaken', level: this.levelNumber });
+      }
+    } else if (this.touchesStartWall()) {
+      this.clearLevel();
     }
-    if (this.heldSince < 0 || commands.some((c) => c.type === 'move')) this.heldSince = this.tick;
-    if (this.tick - this.heldSince >= secondsToTicks(tuning.player.HOLD_REPEAT_DELAY)) this.tryMove(held);
   }
 
-  private tryMove(dir: Dir): void {
-    if (this.isMoving()) return;
+  private touchesStartWall(): boolean {
     const p = this.player;
-    const { dx, dy } = DIR_VECTORS[dir];
-    const nx = p.x + dx;
-    const ny = p.y + dy;
-    if (nx < 0 || ny < 0 || nx >= tuning.field.GRID_W || ny >= tuning.field.GRID_H) {
-      this.events.push({ type: 'bumped', x: p.x, y: p.y });
-      return;
-    }
-    p.fromX = p.x;
-    p.fromY = p.y;
-    p.x = nx;
-    p.y = ny;
-    p.moveStartTick = this.tick;
-    p.moveTicks = Math.max(1, secondsToTicks(tuning.player.MOVE_TIME));
-    this.events.push({ type: 'moved', x: nx, y: ny });
-    if (nx === this.pip.x && ny === this.pip.y) {
-      this.score++;
-      this.events.push({ type: 'pickup', x: nx, y: ny, score: this.score });
-      this.pip = this.spawnPip();
-    }
+    const c = closestOnSegment(this.level.startWall, p.x, p.z);
+    return Math.hypot(p.x - c.x, p.z - c.z) <= tuning.player.RADIUS + tuning.start.TOUCH_MARGIN;
   }
 
-  private spawnPip(): { x: number; y: number } {
-    const { GRID_W, GRID_H } = tuning.field;
-    for (;;) {
-      const x = this.rngSpawn.int(0, GRID_W - 1);
-      const y = this.rngSpawn.int(0, GRID_H - 1);
-      if (x !== this.player.x || y !== this.player.y) return { x, y };
-    }
+  private clearLevel(): void {
+    const r = this.run;
+    r.eyesExtracted++;
+    if (r.bestEscapeTicks === null || this.escapeTicks < r.bestEscapeTicks) r.bestEscapeTicks = this.escapeTicks;
+    this.setState('LEVEL_CLEAR');
+    this.events.push({ type: 'levelCleared', level: this.levelNumber, escapeTime: this.escapeTicks / tuning.sim.SIM_HZ });
   }
 }

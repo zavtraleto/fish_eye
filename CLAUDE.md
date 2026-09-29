@@ -10,7 +10,7 @@ Vite + TypeScript (strict) + Three.js. Target: desktop Chrome, keyboard + mouse,
 
 ## Status
 
-Game designed (GDD), implementation not started. `src/sim/world.ts` and `src/render/scene.ts` still hold the template demo (a cube collecting pips on a grid): replace it with the real game in plan phase 1, keep the infrastructure.
+Phase 1 done (movement, vertex fisheye projection). Phase 2 in progress: the run loop on a fixed test level (`src/sim/level/fixed.ts` → `build.ts`), screens, HUD, sounds. No enemy yet: death only from the debug panel.
 
 ## Language
 

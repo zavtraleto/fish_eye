@@ -19,8 +19,10 @@ const leaf = (title: string, ...groups: GroupKey[]): TuneFolder => ({ title, gro
 export const TUNE_LAYOUT: readonly TuneFolder[] = [
   leaf('Sim', 'sim'),
   leaf('Player', 'player'),
-  leaf('Field', 'field'),
+  leaf('Camera', 'camera'),
   leaf('View', 'view'),
+  { title: 'Level', groups: ['start', 'eye', 'route'] },
+  leaf('Run', 'run'),
 ];
 
 /** Every group in the folders, depth first. */
@@ -81,12 +83,42 @@ export function tuningControlKind(value: unknown): 'number' | 'boolean' | 'color
 const RANGES: Record<string, [number, number, number]> = {
   SIM_HZ: [30, 240, 1],
   TIME_SCALE: [0.05, 4, 0.05],
-  GRID_W: [2, 12, 1],
-  GRID_H: [2, 12, 1],
+  MOVE_SPEED: [1, 30, 0.1],
+  ACCEL: [5, 1000, 1],
+  FRICTION: [5, 1000, 1],
+  RADIUS: [0.1, 3, 0.01],
+  EYE_HEIGHT: [0.5, 3, 0.05],
+  MOUSE_SENSITIVITY: [0.0002, 0.01, 0.0001],
+  SUBSTEP: [0.02, 0.5, 0.01],
+  H_FOV: [90, 270, 1],
+  PITCH_LIMIT: [0, 89, 1],
+  NEAR: [0.01, 1, 0.01],
+  FAR: [10, 200, 1],
   MAX_PIXEL_RATIO: [0.5, 3, 0.25],
-  CAMERA_FOV: [10, 90, 1],
-  CAMERA_PITCH: [10, 89, 1],
+  INTERNAL_SCALE: [0.1, 1, 0.05],
+  FOG_NEAR: [0, 100, 0.5],
+  FOG_FAR: [1, 150, 0.5],
+  MESH_SEGMENT: [0.25, 4, 0.25],
+  SIZE: [0.2, 5, 0.05],
+  SPAWN_DISTANCE: [0.5, 5, 0.1],
+  TOUCH_MARGIN: [0, 1, 0.01],
+  HEIGHT: [0.3, 4, 0.05],
+  SPIN: [0, 6, 0.1],
+  LINE_WIDTH: [0.02, 1, 0.01],
+  LINE_LIFT: [0.005, 0.5, 0.005],
+  LEVEL_CLEAR_TIME: [0, 3, 0.05],
+  DEATH_COLLAPSE_TIME: [0, 3, 0.05],
+  RESTART_LOCKOUT: [0, 3, 0.05],
 };
+
+/** String tunables shown as a dropdown. */
+const OPTIONS: Record<string, readonly string[]> = {
+  MAPPING: ['equidistant', 'stereographic'],
+};
+
+export function stringOptions(key: string): readonly string[] | undefined {
+  return OPTIONS[key];
+}
 
 /** `[min, max, step]` for a numeric tunable with the given default. */
 export function sliderRange(key: string, def: number): [number, number, number] {

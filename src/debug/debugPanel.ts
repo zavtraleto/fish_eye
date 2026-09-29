@@ -11,6 +11,7 @@ import {
   matchesFilter,
   resetGroups,
   sliderRange,
+  stringOptions,
   tuningControlKind,
   type GroupKey,
   type TuneFolder,
@@ -20,6 +21,10 @@ export interface DebugActions {
   getSeed(): number;
   /** Omitted seed keeps the current one; 'random' rolls a new seed. */
   restart(opts: { seed?: number | 'random' }): void;
+  /** Ends the run as if the enemy touched the player. */
+  kill(): void;
+  /** Teleports the player next to the EYE. */
+  toEye(): void;
   setOverlayVisible(v: boolean): void;
   setLogEvents(v: boolean): void;
   cheats: Cheats;
@@ -127,6 +132,12 @@ export class DebugPanel {
     return this.root.style.display !== 'none';
   }
 
+  /** Re-reads bound values changed outside the panel. */
+  refresh(): void {
+    this.pane.refresh();
+    this.refreshVisibility();
+  }
+
   syncSeed(seed: number): void {
     this.state.seed = seed;
     this.pane.refresh();
@@ -168,6 +179,9 @@ export class DebugPanel {
         binding = folder.addBinding(values, key, { min, max, step });
       } else if (kind === 'color') {
         binding = folder.addBinding(values, key, { view: 'color' });
+      } else if (kind === 'string' && stringOptions(key)) {
+        const options = Object.fromEntries(stringOptions(key)!.map((o) => [o, o]));
+        binding = folder.addBinding(values, key, { options });
       } else {
         binding = folder.addBinding(values, key);
       }
@@ -289,6 +303,8 @@ export class DebugPanel {
 
     const cf = folder('Cheats');
     cf.addBinding(a.cheats, 'god', { label: 'god mode' });
+    cf.addButton({ title: 'teleport to EYE' }).on('click', () => a.toEye());
+    cf.addButton({ title: 'kill player' }).on('click', () => a.kill());
   }
 
   private copyLink(): void {

@@ -1,15 +1,19 @@
 import './styles.css';
+import { version } from '../package.json';
 import { loadTuningOverrides, tuning } from './config/tuning';
 import { InputState } from './core/input/commands';
-import { attachKeyboard, attachSwipe, blockBrowserGestures } from './core/input/devices';
+import { attachKeyboard, attachMouseLook } from './core/input/devices';
 import { GameLoop } from './core/loop';
 import { randomSeed } from './core/rng';
+import { Sfx } from './audio/sfx';
 import type { DebugActions, DebugPanel } from './debug/debugPanel';
 import { DebugOverlay } from './debug/overlay';
 import { parseDebugParams } from './debug/params';
-import { t } from './i18n';
 import { SceneRenderer } from './render/scene';
+import type { RunResult } from './sim/run';
 import { World, type Cheats } from './sim/world';
+import { loadBest, saveIfBest } from './ui/best';
+import { Screens } from './ui/screens';
 
 function byId(id: string): HTMLElement {
   const e = document.getElementById(id);
@@ -25,21 +29,21 @@ const stage = byId('stage');
 const ui = byId('ui');
 
 const cheats: Cheats = { god: params.god };
-let world = new World({ seed: params.seed ?? randomSeed(), cheats });
+/** Every run gets a new seed; `?seed=` pins it for debugging (GDD §14.2). */
+const nextSeed = () => params.seed ?? randomSeed();
+let world = new World({ seed: nextSeed(), cheats });
 
 const input = new InputState();
+input.look.yaw = world.level.spawn.yaw;
 attachKeyboard(input);
-blockBrowserGestures();
 
 const view = new SceneRenderer(stage);
-attachSwipe(input, view.renderer.domElement);
-window.addEventListener('resize', () => view.resize());
+const sfx = new Sfx();
+view.renderer.domElement.addEventListener('pointerdown', () => sfx.unlock());
+attachMouseLook(input, view.renderer.domElement);
 
-// ---------- HUD (DOM placeholder until the game has its own) ----------
-const hud = document.createElement('div');
-hud.className = 'hud';
-ui.appendChild(hud);
-let shownScore = -1;
+const screens = new Screens(ui, stage);
+let best = loadBest();
 
 // ---------- Debug ----------
 const overlay = new DebugOverlay(ui);
@@ -47,16 +51,37 @@ let panel: DebugPanel | null = null;
 let logEvents = false;
 let debugOn = false;
 
-function restart(opts: { seed?: number | 'random' }): void {
+function restart(opts: { seed?: number | 'random' } = {}): void {
   const seed = opts.seed === 'random' ? randomSeed() : opts.seed ?? world.seed;
-  world = new World({ seed, cheats });
+  world = new World({ seed, cheats, startState: 'PLAYING' });
   input.clear();
+  input.look.yaw = world.level.spawn.yaw;
+  input.look.pitch = 0;
+  screens.newBest = false;
   panel?.syncSeed(seed);
+}
+
+/** Keeps the view direction of the new level's spawn. */
+function onLevelStarted(): void {
+  input.look.yaw = world.level.spawn.yaw;
+  input.look.pitch = 0;
+}
+
+function onDied(): void {
+  const result: RunResult = { seed: world.seed, eyes: world.run.eyesExtracted, runTime: world.run.runTicks / tuning.sim.SIM_HZ, version };
+  screens.newBest = saveIfBest(result);
+  if (screens.newBest) best = result;
 }
 
 const actions: DebugActions = {
   getSeed: () => world.seed,
   restart,
+  kill: () => world.kill(),
+  toEye: () => {
+    const p = world.player;
+    p.x = p.prevX = world.level.eye.x;
+    p.z = p.prevZ = world.level.eye.z + 1;
+  },
   setOverlayVisible: (v) => (overlay.visible = v),
   setLogEvents: (v) => (logEvents = v),
   cheats,
@@ -88,26 +113,30 @@ const loop = new GameLoop(
   { hz: tuning.sim.SIM_HZ, maxFrameTime: tuning.sim.MAX_FRAME_TIME },
   {
     tick() {
-      world.step({ commands: input.drain(), held: input.heldDir });
-      for (const e of world.events) {
-        view.onEvent(e);
+      world.step({ commands: input.drain(), held: input.held, yaw: input.look.yaw });
+      const events = world.events.splice(0);
+      for (const e of events) {
         if (logEvents) console.debug('[sim]', e);
+        sfx.onEvent(e);
+        if (e.type === 'levelStarted') onLevelStarted();
+        else if (e.type === 'died') onDied();
+        else if (e.type === 'restartRequested') restart({ seed: nextSeed() });
       }
-      world.events.length = 0;
     },
     render(alpha, frameSeconds) {
-      view.render(world, world.simFrozen ? 0 : alpha, frameSeconds);
-      if (world.score !== shownScore) {
-        shownScore = world.score;
-        hud.textContent = t('hud.score', { score: shownScore });
-      }
+      view.render(world, input.look, world.simFrozen ? 0 : alpha, frameSeconds);
+      screens.update(world, best);
+      const p = world.player;
       overlay.update(frameSeconds, {
         stats: loop.stats,
-        state: world.state,
+        state: `${world.state} ${world.phase} L${world.levelNumber}`,
         seed: world.seed,
         tick: world.tick,
         timeScale: loop.clock.timeScale,
         paused: loop.clock.paused,
+        extra:
+          `canvas ${view.renderer.domElement.width}×${view.renderer.domElement.height}\n` +
+          `pos ${p.x.toFixed(2)} ${p.z.toFixed(2)}  speed ${Math.hypot(p.vx, p.vz).toFixed(2)}`,
       });
     },
   },
@@ -118,6 +147,7 @@ if (params.debug) void setDebug(true);
 loop.start();
 
 // Dev-only handle for tests in the browser (CLAUDE.md → Verifying in the browser).
+// Without Pointer Lock, drive `input.held`, `input.look` and `input.push()` directly.
 if (import.meta.env.DEV) {
   Object.assign(window, {
     __game: {
@@ -130,6 +160,7 @@ if (import.meta.env.DEV) {
       tuning,
       cheats,
       restart,
+      actions,
     },
   });
 }
