@@ -172,6 +172,25 @@ export const DEFAULT_TUNING = {
     CROSS_CHANCE: 0.45,
     /** Share of flesh-kin halls that are a clump of two or three polygons. */
     CLUMP_CHANCE: 0.5,
+    /** Rotundas (GDD §6): chance per hall at least ROTUNDA_MIN_RADIUS big; the core is at least ROTUNDA_CORE_MIN, meters. */
+    ROTUNDA_CHANCE: 0.15,
+    ROTUNDA_MIN_RADIUS: 16,
+    ROTUNDA_CORE_MIN: 6,
+    /** Colonnades: machine halls at least COLONNADE_MIN_RADIUS big; square pillars PILLAR_SIZE wide, PILLAR_GAP apart, meters. */
+    COLONNADE_CHANCE: 0.2,
+    COLONNADE_MIN_RADIUS: 22,
+    PILLAR_SIZE: 9,
+    PILLAR_GAP: 10,
+    /** Honeycombs: flesh-kin halls at least HIVE_MIN_RADIUS big, crowded with masses HIVE_BLOB_MIN–MAX in radius. */
+    HIVE_CHANCE: 0.2,
+    HIVE_MIN_RADIUS: 20,
+    HIVE_BLOB_MIN: 5.5,
+    HIVE_BLOB_MAX: 7.5,
+    /** Niches along long straight machine walls: chance per side, spacing, width and depth, meters. */
+    NICHE_CHANCE: 0.5,
+    NICHE_PITCH: 7,
+    NICHE_WIDTH: 3.5,
+    NICHE_DEPTH: 2.5,
     /** The START box: width along the white wall, depth away from it. */
     START_WIDTH: 20,
     START_DEPTH: 18,

@@ -83,6 +83,121 @@ function organicHall(rng: Rng, c: Point, r: number): Point[][] {
   return parts;
 }
 
+/** A module's shapes: open space, and rock carved out of it. */
+interface Parts {
+  open: Point[][];
+  solid: Point[][];
+}
+
+/** A near-regular polygon: cores, pillars, blobs of a honeycomb. */
+function roundish(rng: Rng, c: Point, r: number, corners = 12): Point[] {
+  const turn = rng.next() * Math.PI;
+  return Array.from({ length: corners }, (_, i) => {
+    const a = turn + (i * 2 * Math.PI) / corners;
+    const d = r * range(rng, 0.92, 1.05);
+    return { x: c.x + Math.cos(a) * d, z: c.z + Math.sin(a) * d };
+  });
+}
+
+/** Rotunda (GDD §6): a hall around a massive core; the ring lets one circle the enemy. */
+function rotunda(rng: Rng, c: Point, r: number): Parts {
+  const core = Math.max(tuning.gen.ROTUNDA_CORE_MIN, r * 0.35);
+  return { open: [roundish(rng, c, r, 16)], solid: [roundish(rng, c, core)] };
+}
+
+/**
+ * Colonnade (GDD §6): a machine hall with a grid of massive square pillars on
+ * the local grid, the centre in a gap; the rhythm breaks — one pillar missing
+ * or shifted.
+ */
+function colonnade(rng: Rng, c: Point, r: number, th: number): Parts {
+  const g = tuning.gen;
+  const phi = range(rng, 0.6, 0.78);
+  const hu = r * Math.cos(phi);
+  const hv = r * Math.sin(phi);
+  const pitch = g.PILLAR_SIZE + g.PILLAR_GAP;
+  const ux = Math.cos(th);
+  const uz = Math.sin(th);
+  const pillars: Point[][] = [];
+  const reach = (h: number) => Math.floor((h - g.PILLAR_GAP - g.PILLAR_SIZE / 2) / pitch - 0.5);
+  const nu = reach(hu);
+  const nv = reach(hv);
+  const cells: [number, number][] = [];
+  for (let a = -nu - 1; a <= nu; a++) for (let b = -nv - 1; b <= nv; b++) cells.push([a, b]);
+  const broken = cells.length ? rng.int(0, cells.length - 1) : -1;
+  const shift = rng.next() < 0.5;
+  cells.forEach(([a, b], k) => {
+    if (k === broken && !shift) return;
+    let u = (a + 0.5) * pitch;
+    let v = (b + 0.5) * pitch;
+    if (k === broken) {
+      u += pitch * 0.3;
+      v -= pitch * 0.2;
+    }
+    const p = { x: c.x + ux * u - uz * v, z: c.z + uz * u + ux * v };
+    pillars.push(rect(p, th, g.PILLAR_SIZE / 2, g.PILLAR_SIZE / 2));
+  });
+  return { open: [rect(c, th, hu, hv)], solid: pillars };
+}
+
+/** Honeycomb (GDD §6): a flesh-kin hall crowded with rounded masses — a hive to thread through. */
+function honeycomb(rng: Rng, c: Point, r: number): Parts {
+  const g = tuning.gen;
+  const blobs: { p: Point; r: number }[] = [];
+  for (let t = 0; t < 80; t++) {
+    const br = range(rng, g.HIVE_BLOB_MIN, g.HIVE_BLOB_MAX);
+    const a = rng.next() * Math.PI * 2;
+    const d = Math.sqrt(rng.next()) * (r - br - g.PILLAR_GAP);
+    if (d < 0) continue;
+    const p = { x: c.x + Math.cos(a) * d, z: c.z + Math.sin(a) * d };
+    // The centre stays open: it is the hall's anchor and where passages arrive.
+    if (Math.hypot(p.x - c.x, p.z - c.z) < br + g.PILLAR_GAP) continue;
+    if (blobs.some((o) => Math.hypot(o.p.x - p.x, o.p.z - p.z) < o.r + br + g.PILLAR_GAP)) continue;
+    blobs.push({ p, r: br });
+  }
+  return { open: [blob(rng, c, r)], solid: blobs.map((o) => roundish(rng, o.p, o.r, 10)) };
+}
+
+/**
+ * Niches (GDD §6): a row of identical recesses along a long straight wall,
+ * outward from the side a → b; one breaks the rhythm — wider, deeper or missing.
+ */
+function niches(rng: Rng, a: Point, b: Point, inward: Point): Point[][] {
+  const g = tuning.gen;
+  const len = dist(a, b);
+  const count = Math.floor((len - 6) / g.NICHE_PITCH);
+  if (count < 2 || rng.next() >= g.NICHE_CHANCE) return [];
+  const ux = (b.x - a.x) / len;
+  const uz = (b.z - a.z) / len;
+  // Outward: away from the space's inside.
+  let nx = -uz;
+  let nz = ux;
+  if ((inward.x - a.x) * nx + (inward.z - a.z) * nz > 0) {
+    nx = -nx;
+    nz = -nz;
+  }
+  const odd = rng.int(0, count - 1);
+  const oddKind = rng.int(0, 2);
+  const out: Point[][] = [];
+  const start = (len - (count - 1) * g.NICHE_PITCH) / 2;
+  for (let i = 0; i < count; i++) {
+    let w = g.NICHE_WIDTH;
+    let depth = g.NICHE_DEPTH;
+    if (i === odd) {
+      if (oddKind === 0) continue;
+      if (oddKind === 1) w *= 2;
+      else depth *= 1.8;
+    }
+    const t = start + i * g.NICHE_PITCH;
+    const cx = a.x + ux * t;
+    const cz = a.z + uz * t;
+    // Half a meter into the space too: shapes must overlap where they join.
+    const at = (u: number, n: number) => ({ x: cx + ux * u + nx * n, z: cz + uz * u + nz * n });
+    out.push([at(-w / 2, -0.5), at(w / 2, -0.5), at(w / 2, depth), at(-w / 2, depth)]);
+  }
+  return out;
+}
+
 /** Direction (radians) in the middle of the widest gap between the given directions. */
 function widestGap(angles: number[]): number {
   const a = [...angles].sort((x, y) => x - y);
@@ -235,8 +350,35 @@ export function skeletonDef(rng: Rng, s: StructureGraph): LevelDef {
       continue;
     }
     const height = id === s.heart ? g.HEART_HEIGHT : range(rng, g.HALL_HEIGHT_MIN, g.HALL_HEIGHT_MAX);
-    const parts = id !== s.heart && machine(c) ? machineHall(rng, c, r, snap(c)) : organicHall(rng, c, r);
-    for (const p of parts) push(p, ref, id === s.heart ? 'heart' : 'hall', height);
+    if (id === s.heart) {
+      for (const p of organicHall(rng, c, r)) push(p, ref, 'heart', height);
+      continue;
+    }
+    // Which module (GDD §6): rotundas anywhere roomy, colonnades in machine districts, honeycombs in flesh-kin ones.
+    const roll = rng.next();
+    const th = snap(c);
+    let module: ModuleKind = 'hall';
+    let parts: Parts;
+    if (r >= g.ROTUNDA_MIN_RADIUS && roll < g.ROTUNDA_CHANCE) {
+      module = 'rotunda';
+      parts = rotunda(rng, c, r);
+    } else if (machine(c) && r >= g.COLONNADE_MIN_RADIUS && roll < g.ROTUNDA_CHANCE + g.COLONNADE_CHANCE) {
+      module = 'colonnade';
+      parts = colonnade(rng, c, r, th);
+    } else if (!machine(c) && r >= g.HIVE_MIN_RADIUS && roll < g.ROTUNDA_CHANCE + g.HIVE_CHANCE) {
+      module = 'honeycomb';
+      parts = honeycomb(rng, c, r);
+    } else {
+      parts = { open: machine(c) ? machineHall(rng, c, r, th) : organicHall(rng, c, r), solid: [] };
+    }
+    for (const p of parts.open) push(p, ref, module, height);
+    // Machine rooms get niches along their long straight sides.
+    if (machine(c) && module !== 'rotunda') {
+      for (const p of parts.open) {
+        for (let i = 0; i < p.length; i++) for (const n of niches(rng, p[i]!, p[(i + 1) % p.length]!, c)) push(n, ref, module, height);
+      }
+    }
+    for (const p of parts.solid) shapes.push({ shape: polygonShape(p), ref, module, height, solid: true });
   }
 
   const end = (id: number) => (id === s.start && startMouth ? startMouth : pos(id));
@@ -286,6 +428,25 @@ export function skeletonDef(rng: Rng, s: StructureGraph): LevelDef {
     // Each leg its own width: passages swell and narrow, never below MIN_CLEARANCE.
     const widths = path.slice(1).map(() => Math.max(g.MIN_CLEARANCE, width * range(rng, 1 - g.WIDTH_VARIATION, 1 + g.WIDTH_VARIATION)));
     for (let i = 0; i + 1 < path.length; i++) shapes.push({ shape: stripShape(path[i]!, path[i + 1]!, widths[i]!), ref, module, height });
+    // Niches along machine galleries' long legs, on both sides.
+    if (square && module === 'gallery') {
+      for (let i = 0; i + 1 < path.length; i++) {
+        const p = path[i]!;
+        const q = path[i + 1]!;
+        const len = dist(p, q);
+        if (len < 2 * g.NICHE_PITCH + 6) continue;
+        const nx = (-(q.z - p.z) / len) * (widths[i]! / 2);
+        const nz = ((q.x - p.x) / len) * (widths[i]! / 2);
+        const mid = { x: (p.x + q.x) / 2, z: (p.z + q.z) / 2 };
+        for (const side of [1, -1]) {
+          const a2 = { x: p.x + nx * side, z: p.z + nz * side };
+          const b2 = { x: q.x + nx * side, z: q.z + nz * side };
+          // Keep the niches off the halls at both ends.
+          const cut = (k: number) => ({ x: a2.x + (b2.x - a2.x) * k, z: a2.z + (b2.z - a2.z) * k });
+          for (const n of niches(rng, cut(0.25), cut(0.75), mid)) push(n, ref, module, height);
+        }
+      }
+    }
     for (let i = 1; i + 1 < path.length; i++) {
       const legDir = Math.atan2(path[i + 1]!.z - path[i]!.z, path[i + 1]!.x - path[i]!.x);
       push(joint(path[i]!, Math.max(widths[i - 1]!, widths[i]!) / 2, legDir, square), ref, module, height);

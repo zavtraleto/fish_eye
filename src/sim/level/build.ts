@@ -9,7 +9,7 @@ import { lineOfSight } from './query';
 import { cellCenter, frameAround, sampleNodes, type GridFrame } from './raster';
 import { signedDistance } from './edt';
 import { openRockIslands } from './rock';
-import { labelCells, sampleField, type Shape } from './shapes';
+import { carveSolids, labelCells, sampleField, type Shape } from './shapes';
 import { SegmentIndex } from './wallIndex';
 
 // Skeleton shapes → Level (GDD §7 steps 8–11, §8): the free-space field on a
@@ -22,6 +22,8 @@ export interface ShapeDef {
   module: ModuleKind;
   /** Ceiling; render only. */
   height: number;
+  /** Rock carved out of the open space after the union (a rotunda's core, a pillar). */
+  solid?: boolean;
 }
 
 export interface LevelDef {
@@ -207,8 +209,15 @@ export function buildLevel(def: LevelDef): Level {
 
   const b = union(def.shapes.map((s) => s.shape.bounds));
   const frame = frameAround(b.x0, b.z0, b.x1, b.z1, tuning.gen.SDF_CELL, MARGIN);
-  const shapes = def.shapes.map((s) => s.shape);
+  // Open shapes make the union; solid ones are carved out of it afterwards.
+  const openIdx = def.shapes.flatMap((s, i) => (s.solid ? [] : [i]));
+  const shapes = openIdx.map((i) => def.shapes[i]!.shape);
   const field = sampleField(shapes, frame);
+  carveSolids(
+    def.shapes.filter((s) => s.solid).map((s) => s.shape),
+    frame,
+    field,
+  );
   openRockIslands(frame, field, tuning.gen.ROCK_MIN_AREA, tuning.gen.ROCK_MIN_THICKNESS);
   const density = def.deform ? def.deform(frame, field) : null;
   // Growths are not islands to open; anything else the flesh cut off is.
@@ -232,7 +241,7 @@ export function buildLevel(def: LevelDef): Level {
       }
     }
     if (o < 0) throw new Error(`open cell ${p.cell} outside every shape`);
-    cellZone[p.cell] = shapeZone[o]!;
+    cellZone[p.cell] = shapeZone[openIdx[o]!]!;
   }
   // A passage the halls swallow whole leaves no floor: its halls open to each other directly.
   const anchorPoints = anchors(frame, field, cellZone, zoneDefs.length);

@@ -50,6 +50,20 @@ export function sampleField(shapes: readonly Shape[], f: GridFrame): Float32Arra
   return out;
 }
 
+/** Carves solid shapes out of the field: rock wherever a solid is (rotunda cores, pillars; GDD §6). */
+export function carveSolids(solids: readonly Shape[], f: GridFrame, field: Float32Array): void {
+  const n = f.w + 1;
+  for (const s of solids) {
+    const [i0, j0, i1, j1] = span(f, s.bounds, true);
+    for (let j = j0; j <= j1; j++) {
+      for (let i = i0; i <= i1; i++) {
+        const v = -s.inside(f.x0 + i * f.cell, f.z0 + j * f.cell);
+        if (v < field[j * n + i]!) field[j * n + i] = v;
+      }
+    }
+  }
+}
+
 /** Per cell, the index of the shape deepest at the cell's centre; -1 far from every shape. */
 export function labelCells(shapes: readonly Shape[], f: GridFrame): Int16Array {
   const owner = new Int16Array(f.w * f.h).fill(-1);
