@@ -7,6 +7,7 @@ import type { FloorPiece, Level, ModuleKind, Portal, WallFace, Zone, ZoneRef } f
 import { NavField, type NavGrid } from './nav';
 import { lineOfSight } from './query';
 import { cellCenter, frameAround, sampleNodes, type GridFrame } from './raster';
+import { openRockIslands } from './rock';
 import { labelCells, sampleField, type Shape } from './shapes';
 import { SegmentIndex } from './wallIndex';
 
@@ -159,12 +160,25 @@ export function buildLevel(def: LevelDef): Level {
   const frame = frameAround(b.x0, b.z0, b.x1, b.z1, tuning.gen.SDF_CELL, MARGIN);
   const shapes = def.shapes.map((s) => s.shape);
   const field = sampleField(shapes, frame);
+  openRockIslands(frame, field, tuning.gen.ROCK_MIN_AREA, tuning.gen.ROCK_MIN_THICKNESS);
   const owner = labelCells(shapes, frame);
   const { walls: edges, pieces } = contour(frame, field);
 
   const cellZone = new Int16Array(frame.w * frame.h).fill(-1);
   for (const p of pieces) {
-    const o = owner[p.cell]!;
+    // An opened rock island can lie beyond every shape's reach: take a nearby owner.
+    let o = owner[p.cell]!;
+    for (let r = 1; o < 0 && r <= 8; r++) {
+      const i = p.cell % frame.w;
+      const j = (p.cell - i) / frame.w;
+      for (let dj = -r; dj <= r && o < 0; dj++) {
+        for (let di = -r; di <= r && o < 0; di++) {
+          const a = i + di;
+          const b = j + dj;
+          if (a >= 0 && b >= 0 && a < frame.w && b < frame.h) o = owner[b * frame.w + a]!;
+        }
+      }
+    }
     if (o < 0) throw new Error(`open cell ${p.cell} outside every shape`);
     cellZone[p.cell] = shapeZone[o]!;
   }

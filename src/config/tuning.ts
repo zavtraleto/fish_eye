@@ -115,7 +115,7 @@ export const DEFAULT_TUNING = {
     /** Longer Delaunay edges are dropped: a gallery that long would pass other spaces. */
     EDGE_MAX: 110,
     /** Two edges of a node closer than this, degrees: the longer one is dropped. */
-    EDGE_MIN_ANGLE: 25,
+    EDGE_MIN_ANGLE: 20,
     /** New spaces per ear at most. */
     EAR_MAX_NODES: 2,
     /** A chord joins spaces at least this many steps apart: a loop must shorten the way (Brogue). */
@@ -134,20 +134,23 @@ export const DEFAULT_TUNING = {
     /** Corners of a hall polygon. */
     HALL_CORNERS_MIN: 5,
     HALL_CORNERS_MAX: 8,
-    GALLERY_WIDTH_MIN: 7,
-    GALLERY_WIDTH_MAX: 14,
-    THROAT_WIDTH_MIN: 5,
-    THROAT_WIDTH_MAX: 6,
+    GALLERY_WIDTH_MIN: 10,
+    GALLERY_WIDTH_MAX: 18,
+    THROAT_WIDTH_MIN: 7,
+    THROAT_WIDTH_MAX: 8,
     /** Share of passages that are throats; never a bridge, so always avoidable. */
     THROAT_CHANCE: 0.2,
     /** Share of passages that are naves: huge galleries. */
     NAVE_CHANCE: 0.12,
-    NAVE_WIDTH_MIN: 16,
-    NAVE_WIDTH_MAX: 24,
+    NAVE_WIDTH_MIN: 18,
+    NAVE_WIDTH_MAX: 28,
     /** Each leg of a passage is this much wider or narrower than its base width, at most. */
     WIDTH_VARIATION: 0.3,
-    /** Narrowest passage anywhere, meters: room for the enemy and a dodge. */
-    MIN_CLEARANCE: 5,
+    /** Narrowest passage anywhere, meters: room to dodge more than one enemy. */
+    MIN_CLEARANCE: 7,
+    /** Rock islands smaller than this, m², or thinner than ROCK_MIN_THICKNESS, m, are opened: no thin columns. */
+    ROCK_MIN_AREA: 80,
+    ROCK_MIN_THICKNESS: 4,
     /** Share of passages that run straight; the rest bend. */
     STRAIGHT_CHANCE: 0.25,
     /** A flesh-kin bend pushes sideways by this share of the passage length. */
@@ -156,9 +159,9 @@ export const DEFAULT_TUNING = {
     /** Shortest leg of a machine L or Z, meters. */
     MIN_LEG: 8,
     /** Halls closer than this gap, meters, may fuse through a wide mouth… */
-    FUSE_GAP: 14,
+    FUSE_GAP: 22,
     /** …with this chance. */
-    FUSE_CHANCE: 0.3,
+    FUSE_CHANCE: 0.5,
     /** Feature size of the "kind" field, meters: machine districts vs flesh-kin ones (GDD §6). */
     KIND_SCALE: 260,
     /** Feature size of the machine grid orientation field, meters. */

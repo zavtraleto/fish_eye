@@ -256,25 +256,33 @@ export function skeletonDef(rng: Rng, s: StructureGraph): LevelDef {
     const throat = roll < g.THROAT_CHANCE;
     const nave = !throat && roll < g.THROAT_CHANCE + g.NAVE_CHANCE;
     const [lo, hi] = throat ? [g.THROAT_WIDTH_MIN, g.THROAT_WIDTH_MAX] : nave ? [g.NAVE_WIDTH_MIN, g.NAVE_WIDTH_MAX] : [g.GALLERY_WIDTH_MIN, g.GALLERY_WIDTH_MAX];
-    const width = range(rng, lo, hi);
+    const touchesStart = e.a === s.start || e.b === s.start;
+    // START's passages stay narrower than its box: a wide one would reach the white wall.
+    const want = Math.min(range(rng, lo, hi), touchesStart ? g.START_WIDTH * 0.6 : Infinity);
     const height = throat ? g.THROAT_HEIGHT : range(rng, g.GALLERY_HEIGHT_MIN, g.GALLERY_HEIGHT_MAX) * (nave ? 1.6 : 1);
     const module: ModuleKind = throat ? 'throat' : 'gallery';
     const square = machine(mid);
     const th = snap(mid);
-    // A bend must keep clear of every other space; else another bend, else straight.
+    /** The widest this path may be and still keep clear of every other space. */
+    const room = (path: Point[]) => {
+      let half = Infinity;
+      for (const n of s.nodes) if (n !== e.a && n !== e.b) half = Math.min(half, toPath(path, pos(n)) - radius.get(n)! * 1.2 - 2);
+      return (2 * half) / (1 + g.WIDTH_VARIATION);
+    };
+    // A bend must leave room for the passage; else another bend, else straight.
     // START's passages run straight: a bend could cut through the white wall.
-    const clear = (path: Point[]) =>
-      s.nodes.every((n) => n === e.a || n === e.b || toPath(path, pos(n)) > radius.get(n)! * 1.2 + (width * (1 + g.WIDTH_VARIATION)) / 2 + 2);
     let path = [a, b];
-    if (e.a !== s.start && e.b !== s.start && rng.next() >= g.STRAIGHT_CHANCE) {
+    if (!touchesStart && rng.next() >= g.STRAIGHT_CHANCE) {
       for (let k = 0; k < 3; k++) {
         const bent = square ? machinePath(rng, a, b, th) : organicPath(rng, a, b);
-        if (clear(bent)) {
+        if (room(bent) >= Math.min(want, g.GALLERY_WIDTH_MIN)) {
           path = bent;
           break;
         }
       }
     }
+    // Narrower where other spaces crowd it, never below MIN_CLEARANCE.
+    const width = Math.max(g.MIN_CLEARANCE, Math.min(want, room(path)));
     // Each leg its own width: passages swell and narrow, never below MIN_CLEARANCE.
     const widths = path.slice(1).map(() => Math.max(g.MIN_CLEARANCE, width * range(rng, 1 - g.WIDTH_VARIATION, 1 + g.WIDTH_VARIATION)));
     for (let i = 0; i + 1 < path.length; i++) shapes.push({ shape: stripShape(path[i]!, path[i + 1]!, widths[i]!), ref, module, height });
