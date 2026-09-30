@@ -1,7 +1,7 @@
 # Fish Eye
 
-PC-first, first-person arcade horror roguelite prototype: follow the green line to the EYE, escape back to the white START from memory, dodge the enemy. Feel modeled on Devil Daggers / Hyper Demon / Quake 3, level topology on Hitman.
-Vite + TypeScript (strict) + Three.js. Target: desktop Chrome, keyboard + mouse, Pointer Lock. Maximum FPS on PC with a modest render budget. Mobile maybe later, only after the prototype works.
+PC-first, first-person arcade horror roguelite prototype: follow the green line to the EYE, escape back to the white START from memory, dodge the enemy. Feel modeled on Devil Daggers / Hyper Demon / Quake 3; levels are a structure — a living creature fused with a megastructure (GDD §6).
+Vite + TypeScript (strict) + Three.js. Target: desktop Chrome, keyboard + mouse, Pointer Lock. 120 FPS target, 60 FPS hard floor — below 60, stop and rethink the approach with the user. Mobile maybe later, only after the prototype works.
 
 - Spec: `docs/GDD.md` (Russian). It is the contract: read the relevant section before changing gameplay. Original source: `docs/FISH_EYE_Prototype_v0.md` (English); the GDD refines it and marks deviations.
 - Look: `docs/VISUAL.md` (Russian). Before changing how anything looks, read its code map and pitfalls.
@@ -10,7 +10,7 @@ Vite + TypeScript (strict) + Three.js. Target: desktop Chrome, keyboard + mouse,
 
 ## Status
 
-Phases 1–5 done (playtest and tuning come later, on a fuller prototype): movement, vertex fisheye, the run loop on a hand-made test level (`src/sim/level/fixed.ts` → `build.ts`), one-button moveset (`src/sim/move/`, GDD §5), the enemy (`src/sim/enemy.ts`, GDD §11), rear vision (`src/render/rearVision.ts`, GDD §12). Next: phase 6, level generation — start with the plan's "Передача фазы 6" section and a brainstorming; the level model itself may change.
+Phases 1–5 done (playtest and tuning come later, on a fuller prototype): movement, vertex fisheye, the run loop on a hand-made test level (`src/sim/level/fixed.ts` → `build.ts`), one-button moveset (`src/sim/move/`, GDD §5), the enemy (`src/sim/enemy.ts`, GDD §11), rear vision (`src/render/rearVision.ts`, GDD §12). Phase 6 (level structure) is designed (GDD §6–§8, brainstorming 2026-09-30) and split into stages 6.1–6.6 in `docs/plans/2026-09-30-structure.md`; next is stage 6.1, the new level model.
 
 ## Language
 
@@ -31,10 +31,11 @@ Before every commit: `npm test` and `npm run build` must pass. Pushing to `main`
 
 ## Design rules
 
-- **Source of truth for anything the GDD leaves open:** Devil Daggers for feel, speed, death, restart and score; Hitman for level topology. Visual references are listed in VISUAL.md. Labels in docs: `[решение YYYY-MM-DD]`, `[оценка]`, `[Devil Daggers]`, `[Hitman]`, …
+- **Source of truth for anything the GDD leaves open:** Devil Daggers for feel, speed, death, restart and score; GDD §6 for level structure (Hitman is no longer the reference). Visual references are listed in VISUAL.md. Labels in docs: `[решение YYYY-MM-DD]`, `[оценка]`, `[Devil Daggers]`, …
 - **Deliberate deviations from the original spec — do not undo them:**
   - Levels are built around a big START↔EYE loop, not a chain (GDD §6).
-  - The room graph is generated directly on the coarse grid, not generated abstractly and then embedded (GDD §7).
+  - The structure graph is built directly on a neighbour graph of irregular points (Delaunay), not generated abstractly and then embedded (GDD §7).
+  - The level graph has no bridges; START and the heart have at least two entrances (GDD §6).
   - The enemy has a WINDUP telegraph before CHARGE (GDD §11.3).
   - The projection is chosen by a spike in phase 1, not deferred (GDD §4).
 - **Colour code:** green = route / EYE, red = enemy / threat / rear vision, white = START / EXIT, everything else dark. No other bright gameplay colours. The world may look as strange as it likes; the signal colours stay clean (VISUAL.md §1).
@@ -46,7 +47,7 @@ Before every commit: `npm test` and `npm run build` must pass. Pushing to `main`
 
 ```
 src/sim/      pure simulation: no DOM, no Three.js — World, player, enemy, run, 2D level geometry
-src/sim/level/  room graph, generation on a grid, layout, build (rects → wall segments, route)
+src/sim/level/  level model (zones, portals, walls), queries; gen/ — structure generation (GDD §7)
 src/render/   Three.js view: reads sim state, never mutates it; camera/ holds the projections
 src/core/     fixed-step loop, seeded RNG, input (keyboard, mouse / Pointer Lock)
 src/data/     content as data (difficulty table, …)
