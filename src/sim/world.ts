@@ -1,13 +1,13 @@
 import { secondsToTicks as T, tuning } from '../config/tuning';
 import type { Command, HeldButtons } from '../core/input/commands';
 import { Rng } from '../core/rng';
-import { chooseSpawnRoom, createEnemy, enemyTouches, stepEnemy, type Enemy } from './enemy';
+import { chooseSpawnNode, createEnemy, enemyTouches, stepEnemy, type Enemy } from './enemy';
 import type { SimEvent } from './events';
 import { buildLevel } from './level/build';
 import { closestOnSegment } from './level/geometry';
-import { fixedLayout } from './level/fixed';
+import { fixedLevel } from './level/fixed';
 import type { Level } from './level/level';
-import { locate, roomCenter } from './level/query';
+import { locate, nodeAnchor, zoneNode } from './level/query';
 import { yawTo } from './look';
 import { stepPlayer } from './move/motion';
 import { createPlayer, type Player } from './player';
@@ -50,6 +50,8 @@ export class World {
   stateTicks = 0;
   levelNumber = 1;
   level!: Level;
+  /** Wall-clock milliseconds the current level took to build; debug only, never used by the sim. */
+  levelBuildMs = 0;
   player!: Player;
   /** Appears when the EYE is taken, from level `FIRST_LEVEL` (GDD §11.6). */
   enemy: Enemy | null = null;
@@ -98,13 +100,13 @@ export class World {
     this.events.push({ type: 'died' });
   }
 
-  /** Puts the enemy in a fair room (GDD §11.6); debug can call it any time. */
+  /** Puts the enemy in a fair node (GDD §11.6); debug can call it any time. */
   spawnEnemy(): void {
     const p = this.player;
-    const area = locate(this.level, p.x, p.z);
-    const playerRoom = !area ? this.level.graph.eye : area.kind === 'room' ? area.room : area.a;
-    const room = chooseSpawnRoom(this.level, playerRoom, (n) => this.rngEnemy.int(0, n - 1));
-    const c = roomCenter(this.level, room);
+    const zone = locate(this.level, p.x, p.z);
+    const playerNode = zone ? zoneNode(zone) : this.level.graph.eye;
+    const node = chooseSpawnNode(this.level, playerNode, (n) => this.rngEnemy.int(0, n - 1));
+    const c = nodeAnchor(this.level, node);
     this.enemy = createEnemy(c.x, c.z, yawTo(p.x - c.x, p.z - c.z), this.tick);
     this.events.push({ type: 'enemySpawned' });
   }
@@ -133,7 +135,9 @@ export class World {
 
   private startLevel(n: number): void {
     this.levelNumber = n;
-    this.level = buildLevel(fixedLayout());
+    const t0 = performance.now();
+    this.level = buildLevel(fixedLevel());
+    this.levelBuildMs = performance.now() - t0;
     const { x, z } = this.level.spawn;
     this.player = createPlayer(x, z);
     this.enemy = null;
@@ -151,7 +155,7 @@ export class World {
 
     const p = this.player;
     const pressed = input.commands.some((c) => c.type === 'press' && c.button === 'jump');
-    const moves = stepPlayer(p, { held: input.held, pressed, yaw: input.yaw }, this.level.walls, 1 / tuning.sim.SIM_HZ, this.tick);
+    const moves = stepPlayer(p, { held: input.held, pressed, yaw: input.yaw }, this.level.wallIndex, 1 / tuning.sim.SIM_HZ, this.tick);
     this.events.push(...moves);
     this.run.distanceTravelled += Math.hypot(p.x - p.prevX, p.z - p.prevZ);
 

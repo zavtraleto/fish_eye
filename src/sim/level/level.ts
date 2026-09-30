@@ -1,17 +1,33 @@
-import type { Point, Rect, Segment } from './geometry';
+import type { Point, Segment } from './geometry';
 import type { LevelGraph } from './graph';
+import type { NavGrid } from './nav';
+import type { GridFrame } from './raster';
+import type { SegmentIndex } from './wallIndex';
 
-/** Floor area of a room or of the corridor of graph edge a–b; `height` is its ceiling (render only). */
-export type Area =
-  | { kind: 'room'; room: number; rect: Rect; height: number }
-  | { kind: 'corridor'; a: number; b: number; rect: Rect; height: number };
+/** Skeleton module of a zone (GDD §6). */
+export type ModuleKind = 'start' | 'heart' | 'hall' | 'gallery' | 'throat' | 'honeycomb' | 'colonnade' | 'rotunda';
 
-/** The openings of edge a–b: midpoints on room a's and room b's wall. */
-export interface Door {
+/** What a zone stands for in the graph: a node (a space) or an edge (a gallery, a throat). */
+export type ZoneRef = { kind: 'node'; node: number } | { kind: 'edge'; a: number; b: number };
+
+/** One space or passage of any shape (GDD §8). */
+export interface Zone {
+  id: number;
+  ref: ZoneRef;
+  module: ModuleKind;
+  /** A point deep inside: route and spawn anchor. */
+  anchor: Point;
+  /** Ceiling; render only. */
+  height: number;
+}
+
+/** Where zones a and b meet: the ends and the middle of their shared boundary. */
+export interface Portal {
   a: number;
   b: number;
-  pa: Point;
-  pb: Point;
+  p0: Point;
+  p1: Point;
+  mid: Point;
 }
 
 /** A vertical wall quad for the renderer; `start` is the white START / EXIT wall. */
@@ -20,19 +36,35 @@ export interface WallFace {
   y0: number;
   y1: number;
   kind: 'wall' | 'start';
+  /** Unit normal toward the open side, for shading. */
+  nx: number;
+  nz: number;
 }
 
-/** A built level (GDD §8): the sim uses `walls`, the renderer `areas` and `faces`. */
+/** The free part of a raster cell and its zone: a floor and ceiling piece (render). */
+export interface FloorPiece {
+  points: readonly Point[];
+  zone: number;
+}
+
+/** A built level (GDD §8): the sim uses zones, walls and nav, the renderer floor and faces. */
 export interface Level {
   graph: LevelGraph;
-  areas: readonly Area[];
-  doors: readonly Door[];
+  zones: readonly Zone[];
+  portals: readonly Portal[];
+  /** The zone raster: `cellZone[c]` is the zone of cell c, -1 where the cell is rock. */
+  frame: GridFrame;
+  cellZone: Int16Array;
   walls: readonly Segment[];
+  /** `walls` in buckets, for collision and sight. */
+  wallIndex: SegmentIndex;
   faces: readonly WallFace[];
+  floor: readonly FloorPiece[];
+  nav: NavGrid;
   /** The white wall: touching it in ESCAPE clears the level (GDD §10). */
   startWall: Segment;
   spawn: { x: number; z: number; yaw: number };
   eye: Point;
-  /** The green line, START centre to EYE (GDD §10). */
+  /** The green line, START to EYE (GDD §10). */
   route: readonly Point[];
 }

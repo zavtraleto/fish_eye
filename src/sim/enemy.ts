@@ -1,8 +1,10 @@
 import { secondsToTicks as T, tuning } from '../config/tuning';
 import type { SimEvent } from './events';
 import type { Point } from './level/geometry';
-import type { Area, Level } from './level/level';
-import { doorBetween, graphDistances, graphPath, lineOfSight, locate, sameArea } from './level/query';
+import type { Level } from './level/level';
+import { NavField } from './level/nav';
+import { graphDistances, graphPath, lineOfSight } from './level/query';
+import { cellAt, cellCenter } from './level/raster';
 import { yawAxes, yawTo } from './look';
 import { bodyRange } from './move/state';
 import { approachVelocity, moveAndSlide, type Player } from './player';
@@ -27,8 +29,9 @@ export interface Enemy {
   chargeFromZ: number;
   /** Tick the last charge ended; the cooldown counts from it. */
   lastAttackTick: number;
-  path: Point[];
-  pathTick: number;
+  /** Steps to the player over the nav raster (GDD §11.1); built on first need. */
+  nav: NavField | null;
+  navTick: number;
 }
 
 export function createEnemy(x: number, z: number, yaw: number, tick: number): Enemy {
@@ -45,8 +48,8 @@ export function createEnemy(x: number, z: number, yaw: number, tick: number): En
     chargeFromX: x,
     chargeFromZ: z,
     lastAttackTick: -Infinity,
-    path: [],
-    pathTick: -Infinity,
+    nav: null,
+    navTick: -Infinity,
   };
 }
 
@@ -60,20 +63,20 @@ export function enemyTouches(e: Enemy, p: Player): boolean {
 }
 
 /**
- * Honest spawn (GDD §11.6): a room at least two graph steps from the player
+ * Honest spawn (GDD §11.6): a node at least two graph steps from the player
  * and off the shortest EYE → START path if one exists; the nearest such
- * rooms, one picked by `pick`.
+ * nodes, one picked by `pick`.
  */
-export function chooseSpawnRoom(level: Level, playerRoom: number, pick: (n: number) => number): number {
-  const dist = graphDistances(level, playerRoom);
+export function chooseSpawnNode(level: Level, playerNode: number, pick: (n: number) => number): number {
+  const dist = graphDistances(level, playerNode);
   const escape = new Set(graphPath(level, level.graph.eye, level.graph.start));
-  const rooms = level.graph.rooms.map((r) => r.id).filter((id) => id !== playerRoom);
-  const far = rooms.filter((id) => (dist.get(id) ?? Infinity) >= 2);
+  const nodes = level.graph.rooms.map((r) => r.id).filter((id) => id !== playerNode);
+  const far = nodes.filter((id) => (dist.get(id) ?? Infinity) >= 2);
   const off = far.filter((id) => !escape.has(id));
-  const pool = off.length ? off : far.length ? far : rooms;
+  const pool = off.length ? off : far.length ? far : nodes;
   const nearest = Math.min(...pool.map((id) => dist.get(id) ?? Infinity));
   const best = pool.filter((id) => dist.get(id) === nearest).sort((a, b) => a - b);
-  return best[pick(best.length)] ?? playerRoom;
+  return best[pick(best.length)] ?? playerNode;
 }
 
 function setState(e: Enemy, state: EnemyState, tick: number): void {
@@ -109,7 +112,7 @@ export function stepEnemy(e: Enemy, level: Level, p: Player, tick: number, dt: n
       break;
     case 'HUNT': {
       const dist = Math.hypot(p.x - e.x, p.z - e.z);
-      const clear = lineOfSight(level.walls, e, playerPos, c.RADIUS);
+      const clear = lineOfSight(level.wallIndex, e, playerPos, c.RADIUS);
       if (clear && dist >= c.CHARGE_RANGE_MIN && dist <= c.CHARGE_RANGE_MAX && tick - e.lastAttackTick >= T(c.CHARGE_COOLDOWN)) {
         e.vx = e.vz = 0;
         setState(e, 'WINDUP', tick);
@@ -150,7 +153,7 @@ export function stepEnemy(e: Enemy, level: Level, p: Player, tick: number, dt: n
       break;
   }
 
-  moveAndSlide(e, level.walls, dt, c.RADIUS);
+  moveAndSlide(e, level.wallIndex, dt, c.RADIUS);
 
   if (e.state === 'CHARGE') {
     const { fx, fz } = yawAxes(e.yaw);
@@ -166,47 +169,28 @@ export function stepEnemy(e: Enemy, level: Level, p: Player, tick: number, dt: n
   }
 }
 
-/** The player when in reach, else the next point of a graph path (GDD §11.1). */
+/** The player in sight, else the farthest nav cell ahead that the body can reach straight (GDD §11.1). */
 function huntTarget(e: Enemy, level: Level, p: Player, tick: number): Point {
-  const here = locate(level, e.x, e.z);
-  const there = locate(level, p.x, p.z);
-  if (!here || !there || sameArea(here, there) || lineOfSight(level.walls, e, p)) {
-    e.path = [];
-    return { x: p.x, z: p.z };
+  const c = tuning.enemy;
+  if (lineOfSight(level.wallIndex, e, p)) return { x: p.x, z: p.z };
+  const f = level.nav.frame;
+  const nav = e.nav && e.nav.grid === level.nav ? e.nav : (e.nav = new NavField(level.nav));
+  const goal = cellAt(f, p.x, p.z);
+  if (nav.goal < 0 || (goal !== nav.goal && tick - e.navTick >= T(c.REPATH_TIME))) {
+    nav.build(p.x, p.z, e.x, e.z, c.RADIUS);
+    e.navTick = tick;
   }
-  if (e.path.length === 0 || tick - e.pathTick >= T(tuning.enemy.REPATH_TIME)) {
-    e.path = planPath(level, here, there);
-    e.pathTick = tick;
+  const steps = Math.max(1, Math.round(c.NAV_LOOKAHEAD / f.cell));
+  let path = nav.descend(e.x, e.z, steps);
+  if (!path.length) {
+    // Knocked off the explored part (a charge, a stun): rebuild now.
+    nav.build(p.x, p.z, e.x, e.z, c.RADIUS);
+    e.navTick = tick;
+    path = nav.descend(e.x, e.z, steps);
   }
-  while (e.path.length && Math.hypot(e.path[0]!.x - e.x, e.path[0]!.z - e.z) < tuning.enemy.WAYPOINT_RADIUS) e.path.shift();
-  return e.path[0] ?? { x: p.x, z: p.z };
-}
-
-/** Rooms an area touches, each with the door point that leads from the area into it. */
-function exits(level: Level, area: Area): { room: number; door: Point | null }[] {
-  if (area.kind === 'room') return [{ room: area.room, door: null }];
-  const [onA, onB] = doorBetween(level, area.a, area.b);
-  return [
-    { room: area.a, door: onA },
-    { room: area.b, door: onB },
-  ];
-}
-
-/** Door points from the enemy's area to the player's, through the fewest rooms. */
-function planPath(level: Level, from: Area, to: Area): Point[] {
-  let best: Point[] | null = null;
-  let bestSteps = Infinity;
-  for (const s of exits(level, from)) {
-    for (const g of exits(level, to)) {
-      const rooms = graphPath(level, s.room, g.room);
-      if (!rooms.length || rooms.length >= bestSteps) continue;
-      const points: Point[] = [];
-      if (s.door) points.push(s.door);
-      for (let i = 0; i + 1 < rooms.length; i++) points.push(...doorBetween(level, rooms[i]!, rooms[i + 1]!));
-      if (g.door) points.push(g.door);
-      best = points;
-      bestSteps = rooms.length;
-    }
+  for (let i = path.length - 1; i > 0; i--) {
+    const q = cellCenter(f, path[i]!);
+    if (lineOfSight(level.wallIndex, e, q, c.RADIUS)) return q;
   }
-  return best ?? [];
+  return path.length > 1 ? cellCenter(f, path[1]!) : { x: p.x, z: p.z };
 }

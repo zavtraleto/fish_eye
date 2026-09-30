@@ -21,6 +21,8 @@ export class SceneRenderer {
   private readonly actors = new Actors();
   private readonly rear = new RearVision();
   private levelMesh: THREE.Group | null = null;
+  /** Triangles of the level mesh, for the debug overlay (GDD §15.4). */
+  levelTriangles = 0;
   private meshKey: { level: Level; segment: number } | null = null;
   private sizeKey = '';
   private width = 1;
@@ -88,5 +90,6 @@ export class SceneRenderer {
     }
     this.levelMesh = buildLevelMesh(level, segment);
     this.scene.add(this.levelMesh);
+    this.levelTriangles = (this.levelMesh.children as THREE.Mesh[]).reduce((s, m) => s + m.geometry.getAttribute('position').count / 3, 0);
   }
 }

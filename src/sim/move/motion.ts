@@ -1,7 +1,7 @@
 import { secondsToTicks as T, tuning } from '../../config/tuning';
 import type { HeldButtons } from '../../core/input/commands';
 import type { MoveEvent } from '../events';
-import type { Segment } from '../level/geometry';
+import type { SegmentIndex } from '../level/wallIndex';
 import { approachVelocity, horizontalSpeed, moveAndSlide, wishDir, type Player } from '../player';
 import { handleSpace } from './space';
 
@@ -19,7 +19,7 @@ export function dashTicks(): number {
 }
 
 /** One tick of player movement; returns what happened, for SimEvents. */
-export function stepPlayer(p: Player, input: MoveInput, walls: readonly Segment[], dt: number, tick: number): MoveEvent[] {
+export function stepPlayer(p: Player, input: MoveInput, walls: SegmentIndex, dt: number, tick: number): MoveEvent[] {
   const out: MoveEvent[] = [];
   const m = p.move;
   handleSpace(p, input.pressed, input.held, input.yaw, tick, out);

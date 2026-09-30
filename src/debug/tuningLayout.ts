@@ -24,7 +24,7 @@ export const TUNE_LAYOUT: readonly TuneFolder[] = [
   leaf('Rear vision', 'rear'),
   leaf('Camera', 'camera'),
   leaf('View', 'view'),
-  { title: 'Level', groups: ['start', 'eye', 'route'] },
+  { title: 'Level', groups: ['gen', 'start', 'eye', 'route'] },
   leaf('Run', 'run'),
 ];
 
@@ -93,6 +93,9 @@ const RANGES: Record<string, [number, number, number]> = {
   EYE_HEIGHT: [0.3, 3, 0.05],
   MOUSE_SENSITIVITY: [0.0002, 0.01, 0.0001],
   SUBSTEP: [0.02, 0.5, 0.01],
+  SDF_CELL: [0.25, 2, 0.25],
+  NAV_CELL: [0.5, 2, 0.5],
+  NAV_LOOKAHEAD: [1, 30, 1],
   // Below 180 the rear-view mirror leaves a blind band (GDD §12).
   H_FOV: [180, 270, 1],
   BODY_HEIGHT: [0.3, 4, 0.05],

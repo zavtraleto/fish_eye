@@ -45,7 +45,7 @@ export class RearVision {
     const m = mirrorRear(eye, halfFov, r.PROXY_RANGE, ex, ez, fx, fz);
     if (!m) return;
 
-    const seen = lineOfSight(world.level.walls, eye, { x: ex, z: ez });
+    const seen = lineOfSight(world.level.wallIndex, eye, { x: ex, z: ez });
     const jitter = seen ? r.JITTER : r.HIDDEN_JITTER;
     const blink = (world.uiTick >> 2) % 2 === 0;
     const age = world.tick - e.stateTick;

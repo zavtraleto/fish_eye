@@ -100,9 +100,17 @@ export const DEFAULT_TUNING = {
     SPAWN_MATERIALIZE: 0.6,
     /** First level with an enemy. */
     FIRST_LEVEL: 2,
+    /** The nav field is rebuilt at most this often, and only when the player changed cell. */
     REPATH_TIME: 0.25,
-    /** A path point counts as reached this close. */
-    WAYPOINT_RADIUS: 1.5,
+    /** Meters of nav path ahead the enemy may cut to in a straight line. */
+    NAV_LOOKAHEAD: 8,
+  },
+  /** GDD §7: level generation. */
+  gen: {
+    /** Free-space raster step, meters: wall detail and floor tessellation. */
+    SDF_CELL: 0.5,
+    /** Enemy navigation raster step, meters. */
+    NAV_CELL: 1,
   },
   /** GDD §12: render only. */
   rear: {

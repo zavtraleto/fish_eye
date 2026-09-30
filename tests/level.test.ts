@@ -1,69 +1,105 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_TUNING, mergeTuning, tuning } from '../src/config/tuning';
 import { buildLevel } from '../src/sim/level/build';
-import { closestOnSegment, rect, type Point, type Segment } from '../src/sim/level/geometry';
-import { fixedLayout } from '../src/sim/level/fixed';
-import type { Layout } from '../src/sim/level/layout';
+import { corridorRect, fixedLevel } from '../src/sim/level/fixed';
+import { closestOnSegment, rect, segmentLength } from '../src/sim/level/geometry';
+import { crossesWall, locate, nodeAnchor } from '../src/sim/level/query';
+import { cellAt } from '../src/sim/level/raster';
 import { wallClearance } from './helpers';
 
-/** Proper intersection of two segments (touching endpoints do not count). */
-function crosses(a: Point, b: Point, s: Segment): boolean {
-  const cross = (ox: number, oz: number, px: number, pz: number, qx: number, qz: number) => (px - ox) * (qz - oz) - (pz - oz) * (qx - ox);
-  const d1 = cross(s.ax, s.az, s.bx, s.bz, a.x, a.z);
-  const d2 = cross(s.ax, s.az, s.bx, s.bz, b.x, b.z);
-  const d3 = cross(a.x, a.z, b.x, b.z, s.ax, s.az);
-  const d4 = cross(a.x, a.z, b.x, b.z, s.bx, s.bz);
-  return d1 * d2 < 0 && d3 * d4 < 0;
-}
+const key = (x: number, z: number) => `${x},${z}`;
 
-const inside = (p: Point, r: { x0: number; z0: number; x1: number; z1: number }) => p.x > r.x0 && p.x < r.x1 && p.z > r.z0 && p.z < r.z1;
-
-describe('level build (GDD §8, §10)', () => {
+describe('level build (GDD §7, §8, §10)', () => {
   beforeEach(() => mergeTuning(tuning, JSON.parse(JSON.stringify(DEFAULT_TUNING))));
 
   it('keeps the green line clear of every wall', () => {
-    const level = buildLevel(fixedLayout());
+    const level = buildLevel(fixedLevel());
     for (let i = 0; i + 1 < level.route.length; i++) {
-      for (const w of level.walls) expect(crosses(level.route[i]!, level.route[i + 1]!, w)).toBe(false);
+      const a = level.route[i]!;
+      const b = level.route[i + 1]!;
+      for (const w of level.walls) expect(crossesWall(a.x, a.z, b.x, b.z, w)).toBe(false);
     }
   });
 
-  it('runs the route from the START centre to the EYE', () => {
-    const level = buildLevel(fixedLayout());
-    const layout = fixedLayout();
-    const startRect = layout.rooms.find((r) => r.id === layout.graph.start)!.rect;
-    expect(inside(level.route[0]!, startRect)).toBe(true);
+  it('runs the route from the START zone to the EYE', () => {
+    const level = buildLevel(fixedLevel());
+    const first = locate(level, level.route[0]!.x, level.route[0]!.z);
+    expect(first?.ref).toEqual({ kind: 'node', node: level.graph.start });
     expect(level.route.at(-1)).toEqual(level.eye);
+    expect(level.eye).toEqual(nodeAnchor(level, level.graph.eye));
   });
 
-  it('puts the white wall on a START side without openings', () => {
-    const level = buildLevel(fixedLayout());
+  it('puts the white wall on the START contour, full length', () => {
+    const level = buildLevel(fixedLevel());
     const white = level.faces.filter((f) => f.kind === 'start');
-    expect(white.length).toBe(1);
-    expect(white[0]!.y0).toBe(0);
-    expect(level.walls).toContainEqual(level.startWall);
+    expect(white.length).toBeGreaterThan(0);
+    for (const f of white) {
+      expect(f.y0).toBe(0);
+      for (const [x, z] of [
+        [f.seg.ax, f.seg.az],
+        [f.seg.bx, f.seg.bz],
+      ] as const) {
+        const c = closestOnSegment(level.startWall, x, z);
+        expect(Math.hypot(x - c.x, z - c.z)).toBeLessThan(1e-6);
+      }
+    }
+    // The contour cuts the two corners by up to one cell each.
+    const whiteLen = white.reduce((s, f) => s + segmentLength(f.seg), 0);
+    expect(whiteLen).toBeGreaterThanOrEqual(segmentLength(level.startWall) - 2 * level.frame.cell - 1e-6);
+    expect(whiteLen).toBeLessThanOrEqual(segmentLength(level.startWall) + 1e-6);
   });
 
-  it('spawns inside START, SPAWN_DISTANCE from the white wall, facing the first opening', () => {
-    const level = buildLevel(fixedLayout());
+  it('rejects a white wall that is not on the contour', () => {
+    const def = fixedLevel();
+    def.startWall = { ax: 0, az: -5, bx: 0, bz: 5 };
+    expect(() => buildLevel(def)).toThrow();
+  });
+
+  it('spawns inside START, SPAWN_DISTANCE from the white wall, facing the route', () => {
+    const level = buildLevel(fixedLevel());
     const { spawn, startWall } = level;
     const c = closestOnSegment(startWall, spawn.x, spawn.z);
     expect(Math.hypot(spawn.x - c.x, spawn.z - c.z)).toBeCloseTo(tuning.start.SPAWN_DISTANCE);
     expect(wallClearance(level.walls, spawn.x, spawn.z)).toBeGreaterThan(tuning.player.WALL_RADIUS);
-    const opening = level.route[1]!;
-    expect(Math.atan2(-(opening.x - spawn.x), -(opening.z - spawn.z))).toBeCloseTo(spawn.yaw);
+    const next = level.route[1]!;
+    expect(Math.atan2(-(next.x - spawn.x), -(next.z - spawn.z))).toBeCloseTo(spawn.yaw);
   });
 
-  it('leaves openings free: every corridor floor connects to both rooms', () => {
-    const level = buildLevel(fixedLayout());
-    for (const a of level.areas.filter((x) => x.kind === 'corridor')) {
-      const mid = { x: (a.rect.x0 + a.rect.x1) / 2, z: (a.rect.z0 + a.rect.z1) / 2 };
-      expect(wallClearance(level.walls, mid.x, mid.z)).toBeGreaterThan(tuning.player.WALL_RADIUS);
+  it('opens every graph edge: each corridor zone meets its two rooms', () => {
+    const level = buildLevel(fixedLevel());
+    for (const z of level.zones.filter((x) => x.ref.kind === 'edge')) {
+      const touching = level.portals.filter((p) => p.a === z.id || p.b === z.id);
+      expect(touching.length, `zone ${z.id}`).toBe(2);
+      for (const p of touching) expect(wallClearance(level.walls, p.mid.x, p.mid.z)).toBeGreaterThan(tuning.player.WALL_RADIUS);
     }
   });
 
+  it('shares wall and floor vertices exactly (VISUAL.md §11)', () => {
+    const level = buildLevel(fixedLevel());
+    const verts = new Set(level.floor.flatMap((p) => p.points.map((q) => key(q.x, q.z))));
+    for (const w of level.walls) {
+      expect(verts.has(key(w.ax, w.az))).toBe(true);
+      expect(verts.has(key(w.bx, w.bz))).toBe(true);
+    }
+  });
+
+  it('locates every zone at its anchor and nothing in the rock', () => {
+    const level = buildLevel(fixedLevel());
+    for (const z of level.zones) expect(locate(level, z.anchor.x, z.anchor.z)).toBe(z);
+    expect(locate(level, 20, 30)).toBeNull(); // between START, A1, B0 and B1
+    expect(level.cellZone[cellAt(level.frame, 20, 30)]).toBe(-1);
+  });
+
+  it('measures nav clearance: the distance to walls in the open, zero in rock', () => {
+    const level = buildLevel(fixedLevel());
+    const { frame, clearance } = level.nav;
+    expect(clearance[cellAt(frame, 20, 30)]).toBe(0);
+    const a = nodeAnchor(level, level.graph.eye);
+    expect(clearance[cellAt(frame, a.x, a.z)]).toBeGreaterThan(5);
+  });
+
   it('the fixed level has no dead ends', () => {
-    const { graph } = fixedLayout();
+    const { graph } = fixedLevel();
     for (const r of graph.rooms) {
       const degree = graph.edges.filter((e) => e.a === r.id || e.b === r.id).length;
       expect(degree, `room ${r.id}`).toBeGreaterThanOrEqual(2);
@@ -71,14 +107,6 @@ describe('level build (GDD §8, §10)', () => {
   });
 
   it('rejects a corridor between rooms that do not face each other', () => {
-    const layout: Layout = {
-      graph: { rooms: [{ id: 0, cx: 0, cz: 0 }, { id: 1, cx: 1, cz: 1 }], edges: [{ a: 0, b: 1 }], start: 0, eye: 1, route: [0, 1] },
-      rooms: [
-        { id: 0, rect: rect(0, 0, 8, 8), height: 4 },
-        { id: 1, rect: rect(20, 20, 28, 28), height: 4 },
-      ],
-      corridors: [{ a: 0, b: 1, width: 4, height: 3 }],
-    };
-    expect(() => buildLevel(layout)).toThrow();
+    expect(() => corridorRect(rect(0, 0, 8, 8), rect(20, 20, 28, 28), 4)).toThrow();
   });
 });

@@ -5,6 +5,7 @@ import { rect, rectWalls, type Segment } from '../src/sim/level/geometry';
 import { yawAxes, yawTo } from '../src/sim/look';
 import { stepPlayer } from '../src/sim/move/motion';
 import { createPlayer, moveAndSlide, wishDir, type Player } from '../src/sim/player';
+import { SegmentIndex } from '../src/sim/level/wallIndex';
 import { wallClearance } from './helpers';
 
 function held(...buttons: Button[]) {
@@ -16,7 +17,8 @@ function held(...buttons: Button[]) {
 const OPEN = rectWalls(rect(-500, -500, 500, 500));
 
 function run(p: Player, buttons: Button[], yaw: number, ticks: number, walls: readonly Segment[] = OPEN): void {
-  for (let i = 0; i < ticks; i++) stepPlayer(p, { held: held(...buttons), pressed: false, yaw }, walls, 1 / tuning.sim.SIM_HZ, i);
+  const index = new SegmentIndex(walls);
+  for (let i = 0; i < ticks; i++) stepPlayer(p, { held: held(...buttons), pressed: false, yaw }, index, 1 / tuning.sim.SIM_HZ, i);
 }
 
 const speed = (p: Player) => Math.hypot(p.vx, p.vz);
@@ -116,7 +118,7 @@ describe('player movement (GDD §3.1)', () => {
     const walls: Segment[] = [{ ax: -5, az: 0, bx: 5, bz: 0 }];
     const p = createPlayer(0, 1);
     p.vz = -300;
-    moveAndSlide(p, walls, 1 / 60);
+    moveAndSlide(p, new SegmentIndex(walls), 1 / 60);
     expect(p.z).toBeCloseTo(tuning.player.WALL_RADIUS, 6);
   });
 

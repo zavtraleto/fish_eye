@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_TUNING, mergeTuning, secondsToTicks as T, tuning } from '../src/config/tuning';
 import { noButtons } from '../src/core/input/commands';
-import { chooseSpawnRoom, createEnemy, enemyTouches, type Enemy } from '../src/sim/enemy';
-import { graphDistances, graphPath, lineOfSight, roomCenter } from '../src/sim/level/query';
+import { chooseSpawnNode, createEnemy, enemyTouches, type Enemy } from '../src/sim/enemy';
+import { graphDistances, graphPath, lineOfSight, nodeAnchor } from '../src/sim/level/query';
 import { yawTo } from '../src/sim/look';
 import { createPlayer } from '../src/sim/player';
 import { World } from '../src/sim/world';
@@ -64,7 +64,7 @@ describe('enemy (GDD §11)', () => {
   it('spawns off the escape path, at least two rooms away, and nearest among those', () => {
     const w = playing();
     const level = w.level;
-    const room = chooseSpawnRoom(level, EYE_ROOM, () => 0);
+    const room = chooseSpawnNode(level, EYE_ROOM, () => 0);
     const dist = graphDistances(level, EYE_ROOM);
     const escape = graphPath(level, EYE_ROOM, START_ROOM);
     expect(dist.get(room)).toBeGreaterThanOrEqual(2);
@@ -154,7 +154,7 @@ describe('enemy (GDD §11)', () => {
 
   it('finds a player standing still rooms away and kills them', () => {
     const w = playing();
-    const c = roomCenter(w.level, 7);
+    const c = nodeAnchor(w.level, 7);
     hunter(w, c.x, c.z);
     let n = 0;
     while (w.state === 'PLAYING' && n++ < T(40)) idle(w, 1);
@@ -186,7 +186,7 @@ describe('enemy (GDD §11)', () => {
   it('sees through doorways but not through walls', () => {
     const w = playing();
     const lvl = w.level;
-    expect(lineOfSight(lvl.walls, { x: 0, z: 0 }, { x: 50, z: 0 })).toBe(true); // START → A1 along the corridor
-    expect(lineOfSight(lvl.walls, { x: 0, z: 0 }, { x: 50, z: 50 })).toBe(false); // START → B1 through walls
+    expect(lineOfSight(lvl.wallIndex, { x: 0, z: 0 }, { x: 50, z: 0 })).toBe(true); // START → A1 along the corridor
+    expect(lineOfSight(lvl.wallIndex, { x: 0, z: 0 }, { x: 50, z: 50 })).toBe(false); // START → B1 through walls
   });
 });

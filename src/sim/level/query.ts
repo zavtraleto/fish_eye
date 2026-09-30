@@ -1,33 +1,27 @@
 import type { Point, Segment } from './geometry';
-import type { Area, Door, Level } from './level';
+import type { Level, Zone } from './level';
+import { cellAt } from './raster';
+import type { SegmentIndex } from './wallIndex';
 
 // Questions the enemy asks about a built level (GDD §11.1).
 
-/** The room or corridor under a point, or null outside the floor. */
-export function locate(level: Level, x: number, z: number): Area | null {
-  for (const a of level.areas) {
-    const r = a.rect;
-    if (x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1) return a;
-  }
-  return null;
+/** The zone under a point, or null in rock. */
+export function locate(level: Level, x: number, z: number): Zone | null {
+  const c = cellAt(level.frame, x, z);
+  const id = c < 0 ? -1 : level.cellZone[c]!;
+  return id < 0 ? null : level.zones[id]!;
 }
 
-export function sameArea(a: Area | null, b: Area | null): boolean {
-  return a !== null && a === b;
+/** The graph node of a zone: its own for a space, the first end for a passage. */
+export function zoneNode(zone: Zone): number {
+  return zone.ref.kind === 'node' ? zone.ref.node : zone.ref.a;
 }
 
-export function roomCenter(level: Level, id: number): Point {
-  for (const a of level.areas) {
-    if (a.kind === 'room' && a.room === id) return { x: (a.rect.x0 + a.rect.x1) / 2, z: (a.rect.z0 + a.rect.z1) / 2 };
-  }
-  throw new Error(`no room ${id}`);
-}
-
-/** The door of edge a–b as [point on a, point on b]. */
-export function doorBetween(level: Level, a: number, b: number): [Point, Point] {
-  const d: Door | undefined = level.doors.find((x) => (x.a === a && x.b === b) || (x.a === b && x.b === a));
-  if (!d) throw new Error(`no door ${a}-${b}`);
-  return d.a === a ? [d.pa, d.pb] : [d.pb, d.pa];
+/** A point deep inside graph node `id`'s zone. */
+export function nodeAnchor(level: Level, id: number): Point {
+  const z = level.zones.find((x) => x.ref.kind === 'node' && x.ref.node === id);
+  if (!z) throw new Error(`no zone for node ${id}`);
+  return z.anchor;
 }
 
 /** Graph steps from `from` to every room, breadth first. */
@@ -79,7 +73,7 @@ export function crossesWall(px: number, pz: number, qx: number, qz: number, w: S
  * A "thick ray" (GDD §11.3): the centre line and two lines `halfWidth` to
  * either side all pass no wall.
  */
-export function lineOfSight(walls: readonly Segment[], a: Point, b: Point, halfWidth = 0): boolean {
+export function lineOfSight(walls: SegmentIndex, a: Point, b: Point, halfWidth = 0): boolean {
   const dx = b.x - a.x;
   const dz = b.z - a.z;
   const len = Math.hypot(dx, dz);
@@ -87,9 +81,12 @@ export function lineOfSight(walls: readonly Segment[], a: Point, b: Point, halfW
   const nz = len > 1e-9 ? (dx / len) * halfWidth : 0;
   const offsets = halfWidth > 0 ? [0, 1, -1] : [0];
   for (const k of offsets) {
-    const ox = nx * k;
-    const oz = nz * k;
-    for (const w of walls) if (crossesWall(a.x + ox, a.z + oz, b.x + ox, b.z + oz, w)) return false;
+    const ax = a.x + nx * k;
+    const az = a.z + nz * k;
+    const bx = b.x + nx * k;
+    const bz = b.z + nz * k;
+    const near = walls.near(Math.min(ax, bx), Math.min(az, bz), Math.max(ax, bx), Math.max(az, bz));
+    for (const w of near) if (crossesWall(ax, az, bx, bz, w)) return false;
   }
   return true;
 }

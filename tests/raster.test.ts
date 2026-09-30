@@ -1,0 +1,49 @@
+import { describe, expect, it } from 'vitest';
+import { rect } from '../src/sim/level/geometry';
+import { cellAt, cellCenter, frameAround, nodePoint, sampleNodes } from '../src/sim/level/raster';
+import { boxShape, labelCells, sampleField } from '../src/sim/level/shapes';
+
+describe('raster (GDD §7, §8)', () => {
+  it('frames bounds on multiples of the cell, with a margin', () => {
+    const f = frameAround(-3.2, 1.1, 4.9, 6, 0.5, 2);
+    expect(f.x0).toBe(-5.5);
+    expect(f.z0).toBe(-1);
+    expect(f.x0 + f.w * f.cell).toBeGreaterThanOrEqual(6.9);
+    expect(f.z0 + f.h * f.cell).toBeGreaterThanOrEqual(8);
+  });
+
+  it('maps points to cells and back', () => {
+    const f = frameAround(0, 0, 10, 10, 1, 0);
+    expect(cellAt(f, 3.5, 2.5)).toBe(2 * f.w + 3);
+    expect(cellCenter(f, 2 * f.w + 3)).toEqual({ x: 3.5, z: 2.5 });
+    expect(cellAt(f, -0.1, 5)).toBe(-1);
+    expect(nodePoint(f, 2, 3)).toEqual({ x: 2, z: 3 });
+  });
+
+  it('box depth: distance to the nearest side inside, negative outside', () => {
+    const b = boxShape(rect(0, 0, 10, 4));
+    expect(b.inside(5, 2)).toBe(2);
+    expect(b.inside(1, 2)).toBe(1);
+    expect(b.inside(0, 2)).toBe(0);
+    expect(b.inside(-3, 2)).toBe(-3);
+    expect(b.inside(13, 8)).toBeCloseTo(-5);
+  });
+
+  it('the union field is open across overlapping shapes', () => {
+    const shapes = [boxShape(rect(0, 0, 10, 10)), boxShape(rect(9, 3, 20, 7))];
+    const f = frameAround(0, 0, 20, 10, 0.5, 2);
+    const field = sampleField(shapes, f);
+    expect(sampleNodes(f, field, 10, 5)).toBeGreaterThan(0.5); // the joint
+    expect(sampleNodes(f, field, 15, 1)).toBeLessThan(0); // rock beside the corridor
+    expect(sampleNodes(f, field, 5, 5)).toBeCloseTo(5);
+  });
+
+  it('labels each cell with the deepest shape', () => {
+    const shapes = [boxShape(rect(0, 0, 10, 10)), boxShape(rect(9, 3, 20, 7))];
+    const f = frameAround(0, 0, 20, 10, 0.5, 2);
+    const owner = labelCells(shapes, f);
+    expect(owner[cellAt(f, 5, 5)]).toBe(0);
+    expect(owner[cellAt(f, 15, 5)]).toBe(1);
+    expect(owner[cellAt(f, -1.9, -1.9)]).toBe(-1);
+  });
+});

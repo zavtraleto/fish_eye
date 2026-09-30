@@ -3,10 +3,11 @@ import { DEFAULT_TUNING, mergeTuning, secondsToTicks as T, tuning } from '../src
 import { noButtons, type Button } from '../src/core/input/commands';
 import type { MoveEvent } from '../src/sim/events';
 import { buildLevel } from '../src/sim/level/build';
-import { fixedLayout } from '../src/sim/level/fixed';
+import { fixedLevel } from '../src/sim/level/fixed';
 import { rect, rectWalls, type Segment } from '../src/sim/level/geometry';
 import { yawTo } from '../src/sim/look';
 import { dashTicks, stepPlayer } from '../src/sim/move/motion';
+import { SegmentIndex } from '../src/sim/level/wallIndex';
 import { bodyRange, dashAvailable } from '../src/sim/move/state';
 import { createPlayer, horizontalSpeed, type Player } from '../src/sim/player';
 import { World } from '../src/sim/world';
@@ -23,7 +24,11 @@ class Rig {
   constructor(
     readonly p: Player = createPlayer(0, 0),
     readonly walls: readonly Segment[] = OPEN,
-  ) {}
+  ) {
+    this.index = new SegmentIndex(walls);
+  }
+
+  private readonly index: SegmentIndex;
 
   /** Runs ticks holding `keys`; `press` pushes Space down on the first one. */
   step(keys: Button[] = [], opts: { press?: boolean; release?: boolean; yaw?: number; times?: number } = {}): void {
@@ -34,7 +39,7 @@ class Rig {
       const held = noButtons();
       for (const k of keys) held[k] = true;
       held.jump = this.space;
-      const out = stepPlayer(this.p, { held, pressed: !!opts.press && i === 0, yaw: opts.yaw ?? EAST }, this.walls, 1 / tuning.sim.SIM_HZ, this.tick);
+      const out = stepPlayer(this.p, { held, pressed: !!opts.press && i === 0, yaw: opts.yaw ?? EAST }, this.index, 1 / tuning.sim.SIM_HZ, this.tick);
       for (const e of out) this.events.push({ ...e, tick: this.tick });
     }
   }
@@ -284,8 +289,8 @@ describe('moveset in the world', () => {
   });
 
   it('keeps every ceiling above the top of a jump', () => {
-    const level = buildLevel(fixedLayout());
-    const lowest = Math.min(...level.areas.map((a) => a.height));
+    const level = buildLevel(fixedLevel());
+    const lowest = Math.min(...level.zones.map((z) => z.height));
     expect(lowest).toBeGreaterThan(apex() + tuning.player.BODY_HEIGHT);
   });
 });

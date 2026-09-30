@@ -1,6 +1,7 @@
 import { tuning } from '../config/tuning';
 import type { HeldButtons } from '../core/input/commands';
-import { closestOnSegment, type Segment } from './level/geometry';
+import { closestOnSegment } from './level/geometry';
+import type { SegmentIndex } from './level/wallIndex';
 import { yawAxes } from './look';
 import { createMove, type MoveState } from './move/state';
 
@@ -65,7 +66,7 @@ export function approachVelocity(p: Body, tx: number, tz: number, maxDelta: numb
  * radius, so the centre never crosses a wall), pushing out of walls after each
  * and dropping the velocity component into them.
  */
-export function moveAndSlide(p: Body, walls: readonly Segment[], dt: number, radius = tuning.player.WALL_RADIUS): void {
+export function moveAndSlide(p: Body, walls: SegmentIndex, dt: number, radius = tuning.player.WALL_RADIUS): void {
   const maxStep = Math.max(0.01, Math.min(tuning.player.SUBSTEP, radius * 0.5));
   const dist = Math.hypot(p.vx, p.vz) * dt;
   const steps = Math.max(1, Math.ceil(dist / maxStep));
@@ -78,10 +79,10 @@ export function moveAndSlide(p: Body, walls: readonly Segment[], dt: number, rad
 }
 
 /** Two passes settle inside corners, where pushing out of one wall pushes into another. */
-function resolveWalls(p: Body, walls: readonly Segment[], radius: number): void {
+function resolveWalls(p: Body, walls: SegmentIndex, radius: number): void {
   for (let pass = 0; pass < 2; pass++) {
     let touched = false;
-    for (const w of walls) {
+    for (const w of walls.near(p.x - radius, p.z - radius, p.x + radius, p.z + radius)) {
       const c = closestOnSegment(w, p.x, p.z);
       let nx = p.x - c.x;
       let nz = p.z - c.z;
