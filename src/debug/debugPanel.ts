@@ -26,6 +26,8 @@ export interface DebugActions {
   /** Teleports the player next to the EYE. */
   toEye(): void;
   spawnEnemy(): void;
+  /** Shows or hides the top-down structure map of the current level. */
+  toggleMap(): void;
   setOverlayVisible(v: boolean): void;
   setLogEvents(v: boolean): void;
   cheats: Cheats;
@@ -301,6 +303,7 @@ export class DebugPanel {
     const vf = folder('View');
     vf.addBinding(s, 'showOverlay', { label: 'stats overlay' }).on('change', (ev) => a.setOverlayVisible(ev.value));
     vf.addBinding(s, 'logEvents', { label: 'log events' }).on('change', (ev) => a.setLogEvents(ev.value));
+    vf.addButton({ title: 'level map' }).on('click', () => a.toggleMap());
 
     const cf = folder('Cheats');
     cf.addBinding(a.cheats, 'god', { label: 'god mode' });

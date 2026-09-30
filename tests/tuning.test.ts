@@ -21,6 +21,6 @@ describe('tuning layout', () => {
 describe('debug params', () => {
   it('parses and clamps', () => {
     const p = parseDebugParams('?debug=1&seed=12&timescale=10&god=true');
-    expect(p).toEqual({ debug: true, seed: 12, god: true, timescale: 4 });
+    expect(p).toEqual({ debug: true, seed: 12, god: true, timescale: 4, map: false });
   });
 });

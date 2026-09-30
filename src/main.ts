@@ -7,6 +7,7 @@ import { GameLoop } from './core/loop';
 import { randomSeed } from './core/rng';
 import { Sfx } from './audio/sfx';
 import type { DebugActions, DebugPanel } from './debug/debugPanel';
+import type { LevelMap } from './debug/levelMap';
 import { DebugOverlay } from './debug/overlay';
 import { parseDebugParams } from './debug/params';
 import { SceneRenderer } from './render/scene';
@@ -48,6 +49,7 @@ let best = loadBest();
 // ---------- Debug ----------
 const overlay = new DebugOverlay(ui);
 let panel: DebugPanel | null = null;
+let map: LevelMap | null = null;
 let logEvents = false;
 let debugOn = false;
 
@@ -83,10 +85,22 @@ const actions: DebugActions = {
     p.x = p.prevX = world.level.eye.x;
     p.z = p.prevZ = world.level.eye.z + 1;
   },
+  toggleMap: () => void toggleMap(),
   setOverlayVisible: (v) => (overlay.visible = v),
   setLogEvents: (v) => (logEvents = v),
   cheats,
 };
+
+/** The structure map is lazy-loaded like the panel; it opens on the current seed and level. */
+async function toggleMap(): Promise<void> {
+  if (!map) {
+    const { LevelMap } = await import('./debug/levelMap');
+    map = new LevelMap(ui);
+    map.visible = false;
+  }
+  map.visible = !map.visible;
+  if (map.visible) map.show(world.seed, world.levelNumber);
+}
 
 /** The panel is lazy-loaded so Tweakpane stays out of the main chunk. */
 async function setDebug(on: boolean): Promise<void> {
@@ -147,6 +161,7 @@ const loop = new GameLoop(
 loop.clock.timeScale = tuning.sim.TIME_SCALE;
 overlay.visible = false;
 if (params.debug) void setDebug(true);
+if (params.map) void toggleMap();
 loop.start();
 
 // Dev-only handle for tests in the browser (CLAUDE.md → Verifying in the browser).

@@ -107,6 +107,21 @@ export const DEFAULT_TUNING = {
   },
   /** GDD §7: level generation. */
   gen: {
+    /** Spacing of the structure's anchor points drawn per point, meters (Poisson). */
+    POINT_SPACING_MIN: 35,
+    POINT_SPACING_MAX: 70,
+    /** Longer Delaunay edges are dropped: a gallery that long would pass other spaces. */
+    EDGE_MAX: 110,
+    /** Two edges of a node closer than this, degrees: the longer one is dropped. */
+    EDGE_MIN_ANGLE: 25,
+    /** New spaces per ear at most. */
+    EAR_MAX_NODES: 3,
+    /** A chord joins spaces at least this many steps apart: a loop must shorten the way (Brogue). */
+    LOOP_MIN_GRAPH_DIST: 3,
+    /** A "different route" is at most this many times the shortest. */
+    ROUTE_STRETCH: 1.5,
+    /** Failed tries before the targets are relaxed one step. */
+    GEN_MAX_ATTEMPTS: 200,
     /** Free-space raster step, meters: wall detail and floor tessellation. */
     SDF_CELL: 0.5,
     /** Enemy navigation raster step, meters. */

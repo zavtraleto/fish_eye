@@ -1,10 +1,12 @@
-// URL debug parameters (GDD §15.3): ?debug=1&seed=123&god=1&timescale=0.5
+// URL debug parameters (GDD §15.3): ?debug=1&seed=123&god=1&timescale=0.5&map=1
 
 export interface DebugParams {
   debug: boolean;
   seed: number | null;
   god: boolean;
   timescale: number;
+  /** Opens the top-down structure map. */
+  map: boolean;
 }
 
 export function parseDebugParams(search: string): DebugParams {
@@ -23,5 +25,6 @@ export function parseDebugParams(search: string): DebugParams {
     seed: seed === null ? null : Math.floor(seed) >>> 0,
     god: flag('god'),
     timescale: timescale === null ? 1 : Math.min(4, Math.max(0.05, timescale)),
+    map: flag('map'),
   };
 }
