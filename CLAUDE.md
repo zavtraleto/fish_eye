@@ -10,7 +10,7 @@ Vite + TypeScript (strict) + Three.js. Target: desktop Chrome, keyboard + mouse,
 
 ## Status
 
-Phases 1–2 done: movement, vertex fisheye, the run loop on a fixed test level (`src/sim/level/fixed.ts` → `build.ts`), screens, HUD, placeholder sounds. Phase 3 (one-button moveset: jump, air dash, slide; `src/sim/move/`, GDD §5) awaits a playtest. Phase 4 in progress: the enemy (`src/sim/enemy.ts`, level queries in `src/sim/level/query.ts`, GDD §11).
+Phases 1–5 done (playtest and tuning come later, on a fuller prototype): movement, vertex fisheye, the run loop on a hand-made test level (`src/sim/level/fixed.ts` → `build.ts`), one-button moveset (`src/sim/move/`, GDD §5), the enemy (`src/sim/enemy.ts`, GDD §11), rear vision (`src/render/rearVision.ts`, GDD §12). Next: phase 6, level generation — start with the plan's "Передача фазы 6" section and a brainstorming; the level model itself may change.
 
 ## Language
 

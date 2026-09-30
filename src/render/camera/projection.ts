@@ -41,6 +41,8 @@ export class VertexFisheyeProjection implements Projection {
     fisheyeUniforms.uAspect.value = width / height;
     fisheyeUniforms.uNear.value = c.NEAR;
     fisheyeUniforms.uFar.value = c.FAR;
+    fisheyeUniforms.uViewport.value.x = width;
+    fisheyeUniforms.uViewport.value.y = height;
     renderer.render(scene, this.camera);
   }
 }

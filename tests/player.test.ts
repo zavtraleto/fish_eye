@@ -89,16 +89,16 @@ describe('player movement (GDD §3.1)', () => {
       expect(p.x).toBeLessThan(room.x1);
       expect(p.z).toBeGreaterThan(room.z0);
       expect(p.z).toBeLessThan(room.z1);
-      expect(wallClearance(walls, p.x, p.z)).toBeGreaterThanOrEqual(tuning.player.RADIUS - 1e-6);
+      expect(wallClearance(walls, p.x, p.z)).toBeGreaterThanOrEqual(tuning.player.WALL_RADIUS - 1e-6);
     }
   });
 
   it('slides along a wall instead of stopping', () => {
     const walls = rectWalls(rect(-10, -10, 10, 10));
-    const p = createPlayer(0, -10 + tuning.player.RADIUS);
+    const p = createPlayer(0, -10 + tuning.player.WALL_RADIUS);
     // Into the z0 wall at 45°, heading +x.
     run(p, ['forward'], -Math.PI / 4, T(0.5), walls);
-    expect(p.z).toBeCloseTo(-10 + tuning.player.RADIUS, 6);
+    expect(p.z).toBeCloseTo(-10 + tuning.player.WALL_RADIUS, 6);
     expect(p.x).toBeGreaterThan(2);
     expect(p.vz).toBeCloseTo(0, 6);
   });
@@ -106,10 +106,10 @@ describe('player movement (GDD §3.1)', () => {
   it('rounds a pillar corner without snagging', () => {
     const walls = rectWalls(rect(-0.5, -0.5, 0.5, 0.5));
     // Heading -z, grazing the pillar's +x side.
-    const p = createPlayer(0.5 + tuning.player.RADIUS * 0.5, 3);
+    const p = createPlayer(0.5 + tuning.player.WALL_RADIUS * 0.5, 3);
     run(p, ['forward'], 0, T(1), walls);
     expect(p.z).toBeLessThan(-3);
-    expect(wallClearance(walls, p.x, p.z)).toBeGreaterThanOrEqual(tuning.player.RADIUS - 1e-6);
+    expect(wallClearance(walls, p.x, p.z)).toBeGreaterThanOrEqual(tuning.player.WALL_RADIUS - 1e-6);
   });
 
   it('does not tunnel through a thin wall in one long tick', () => {
@@ -117,7 +117,7 @@ describe('player movement (GDD §3.1)', () => {
     const p = createPlayer(0, 1);
     p.vz = -300;
     moveAndSlide(p, walls, 1 / 60);
-    expect(p.z).toBeCloseTo(tuning.player.RADIUS, 6);
+    expect(p.z).toBeCloseTo(tuning.player.WALL_RADIUS, 6);
   });
 
   it('interpolates from the previous position', () => {

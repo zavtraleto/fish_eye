@@ -179,7 +179,7 @@ export class World {
   private touchesStartWall(): boolean {
     const p = this.player;
     const c = closestOnSegment(this.level.startWall, p.x, p.z);
-    return Math.hypot(p.x - c.x, p.z - c.z) <= tuning.player.RADIUS + tuning.start.TOUCH_MARGIN;
+    return Math.hypot(p.x - c.x, p.z - c.z) <= tuning.player.WALL_RADIUS + tuning.start.TOUCH_MARGIN;
   }
 
   private clearLevel(): void {

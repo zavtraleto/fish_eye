@@ -194,7 +194,7 @@ describe('moveset: dash (GDD §5.3)', () => {
     r.step([], { press: true, yaw: yawTo(1, 1) });
     r.step([], { times: dashTicks() - 1, yaw: yawTo(1, 1) });
     expect(r.p.move.mode).toBe('dash');
-    expect(r.p.x).toBeCloseTo(1 - tuning.player.RADIUS, 6);
+    expect(r.p.x).toBeCloseTo(1 - tuning.player.WALL_RADIUS, 6);
     expect(r.p.z).toBeGreaterThan(2);
   });
 });

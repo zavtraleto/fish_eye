@@ -3,9 +3,11 @@ import { tuning } from '../config/tuning';
 import type { Look } from '../core/input/commands';
 import type { Level } from '../sim/level/level';
 import type { World } from '../sim/world';
+import { signalFogScale } from './camera/fisheyeShader';
 import { VertexFisheyeProjection, type Eye, type Projection } from './camera/projection';
 import { Actors } from './actors';
 import { buildLevelMesh } from './levelMesh';
+import { RearVision } from './rearVision';
 
 // Greybox first-person view (docs/VISUAL.md): reads World, never mutates it.
 
@@ -17,7 +19,8 @@ export class SceneRenderer {
   private readonly fog = new THREE.Fog(FOG_COLOR, 5, 20);
   private readonly projection: Projection = new VertexFisheyeProjection();
   private readonly actors = new Actors();
-  private levelMesh: THREE.Mesh | null = null;
+  private readonly rear = new RearVision();
+  private levelMesh: THREE.Group | null = null;
   private meshKey: { level: Level; segment: number } | null = null;
   private sizeKey = '';
   private width = 1;
@@ -32,7 +35,7 @@ export class SceneRenderer {
     this.renderer.domElement.id = 'game-canvas';
     parent.appendChild(this.renderer.domElement);
     this.scene.fog = this.fog;
-    this.scene.add(this.actors.root);
+    this.scene.add(this.actors.root, this.rear.root);
   }
 
   render(world: World, look: Look, alpha: number, frameSeconds: number): void {
@@ -40,6 +43,7 @@ export class SceneRenderer {
     this.syncLevel(world.level);
     this.fog.near = tuning.view.FOG_NEAR;
     this.fog.far = tuning.view.FOG_FAR;
+    signalFogScale.value = tuning.view.FOG_FAR / Math.max(1e-3, tuning.view.SIGNAL_FOG_FAR);
     this.actors.update(world, frameSeconds, alpha);
 
     const p = world.player;
@@ -51,6 +55,7 @@ export class SceneRenderer {
     this.eye.y = m.prevY + (m.y - m.prevY) * alpha + this.eyeHeight;
     this.eye.yaw = look.yaw;
     this.eye.pitch = look.pitch;
+    this.rear.update(world, this.eye, this.projection.halfFovH(), alpha);
     this.projection.render(this.renderer, this.scene, this.eye, this.width, this.height);
   }
 
@@ -76,8 +81,10 @@ export class SceneRenderer {
     this.meshKey = { level, segment };
     if (this.levelMesh) {
       this.scene.remove(this.levelMesh);
-      this.levelMesh.geometry.dispose();
-      (this.levelMesh.material as THREE.Material).dispose();
+      for (const m of this.levelMesh.children as THREE.Mesh[]) {
+        m.geometry.dispose();
+        (m.material as THREE.Material).dispose();
+      }
     }
     this.levelMesh = buildLevelMesh(level, segment);
     this.scene.add(this.levelMesh);

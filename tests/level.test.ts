@@ -49,7 +49,7 @@ describe('level build (GDD §8, §10)', () => {
     const { spawn, startWall } = level;
     const c = closestOnSegment(startWall, spawn.x, spawn.z);
     expect(Math.hypot(spawn.x - c.x, spawn.z - c.z)).toBeCloseTo(tuning.start.SPAWN_DISTANCE);
-    expect(wallClearance(level.walls, spawn.x, spawn.z)).toBeGreaterThan(tuning.player.RADIUS);
+    expect(wallClearance(level.walls, spawn.x, spawn.z)).toBeGreaterThan(tuning.player.WALL_RADIUS);
     const opening = level.route[1]!;
     expect(Math.atan2(-(opening.x - spawn.x), -(opening.z - spawn.z))).toBeCloseTo(spawn.yaw);
   });
@@ -58,7 +58,7 @@ describe('level build (GDD §8, §10)', () => {
     const level = buildLevel(fixedLayout());
     for (const a of level.areas.filter((x) => x.kind === 'corridor')) {
       const mid = { x: (a.rect.x0 + a.rect.x1) / 2, z: (a.rect.z0 + a.rect.z1) / 2 };
-      expect(wallClearance(level.walls, mid.x, mid.z)).toBeGreaterThan(tuning.player.RADIUS);
+      expect(wallClearance(level.walls, mid.x, mid.z)).toBeGreaterThan(tuning.player.WALL_RADIUS);
     }
   });
 

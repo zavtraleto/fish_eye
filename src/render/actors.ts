@@ -7,24 +7,31 @@ import type { World } from '../sim/world';
 import { patchMaterial } from './camera/fisheyeShader';
 import { GeometryBuilder, cuts } from './levelMesh';
 
-// EYE, the green line (GDD §10) and the enemy (GDD §11), VISUAL.md §2. Signal
-// colours never fade in fog; the EYE and the line vanish the moment it is taken.
+// EYE, the green line (GDD §10) and the enemy (GDD §11), VISUAL.md §2. The EYE
+// and the line never fade in fog and vanish the moment the EYE is taken; the
+// enemy fades over the long signal fog range.
 
 const GREEN = 0x39ff6a;
 const RED = 0xff2a2a;
 const RED_FLASH = 0xff9a9a;
 const RED_DIM = 0x5a0e0e;
 
-function worldMaterial(params: THREE.MeshBasicMaterialParameters): THREE.MeshBasicMaterial {
+function worldMaterial(params: THREE.MeshBasicMaterialParameters, signal = false): THREE.MeshBasicMaterial {
   const m = new THREE.MeshBasicMaterial({ fog: false, ...params });
-  patchMaterial(m);
+  patchMaterial(m, { signal });
   return m;
 }
 
-/** Flat ribbon over the floor, cut for the fisheye; each piece overlaps the joints by half a width. */
+/**
+ * Two ribbons crossed along the route (flat and upright), cut for the fisheye:
+ * seen edge-on from the side the flat one gets thinner than a pixel and breaks
+ * up, the upright one does not. Each piece overlaps the joints by half a width.
+ */
 function buildRouteGeometry(route: readonly Point[], width: number, lift: number, seg: number): THREE.BufferGeometry {
   const b = new GeometryBuilder();
   const h = width / 2;
+  // Both ribbons share the axis at lift + h.
+  const y = lift + h;
   for (let i = 0; i + 1 < route.length; i++) {
     const p = route[i]!;
     const q = route[i + 1]!;
@@ -39,12 +46,13 @@ function buildRouteGeometry(route: readonly Point[], width: number, lift: number
       const a = { x: p.x + dx * ts[j]!, z: p.z + dz * ts[j]! };
       const c = { x: p.x + dx * ts[j + 1]!, z: p.z + dz * ts[j + 1]! };
       b.quad(
-        { x: a.x + nx, y: lift, z: a.z + nz },
-        { x: c.x + nx, y: lift, z: c.z + nz },
-        { x: c.x - nx, y: lift, z: c.z - nz },
-        { x: a.x - nx, y: lift, z: a.z - nz },
+        { x: a.x + nx, y, z: a.z + nz },
+        { x: c.x + nx, y, z: c.z + nz },
+        { x: c.x - nx, y, z: c.z - nz },
+        { x: a.x - nx, y, z: a.z - nz },
         GREEN,
       );
+      b.quad({ x: a.x, y: y - h, z: a.z }, { x: c.x, y: y - h, z: c.z }, { x: c.x, y: y + h, z: c.z }, { x: a.x, y: y + h, z: a.z }, GREEN);
     }
   }
   return b.build();
@@ -67,7 +75,7 @@ function buildEye(): THREE.Group {
 }
 
 /** Greybox enemy: a low-poly red body with a snout pointing along its facing (-z). */
-function buildEnemy(material: THREE.MeshBasicMaterial): THREE.Group {
+export function buildEnemy(material: THREE.MeshBasicMaterial): THREE.Group {
   const g = new THREE.Group();
   const body = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 1), material);
   const snout = new THREE.Mesh(new THREE.ConeGeometry(0.45, 1.1, 5), material);
@@ -82,7 +90,8 @@ export class Actors {
   readonly root = new THREE.Group();
   private readonly eye = buildEye();
   private readonly route: THREE.Mesh;
-  private readonly enemyMaterial = worldMaterial({ color: RED, transparent: true });
+  /** Seen early in the dark, not from everywhere: the signal fog range (GDD §11). */
+  private readonly enemyMaterial = worldMaterial({ color: RED, transparent: true, fog: true }, true);
   private readonly enemy = buildEnemy(this.enemyMaterial);
   private key: { level: Level; width: number; lift: number; segment: number } | null = null;
 

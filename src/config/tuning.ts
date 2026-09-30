@@ -16,7 +16,13 @@ export const DEFAULT_TUNING = {
     ACCEL: 130,
     /** m/s² toward rest with no move key held. */
     FRICTION: 90,
+    /** Enemy contact radius (GDD §5.5). */
     RADIUS: 0.35,
+    /**
+     * Wall collision radius: keeps the camera this far from walls, where the
+     * vertex fisheye bends near geometry badly (VISUAL.md §11).
+     */
+    WALL_RADIUS: 1,
     /** Render only. */
     EYE_HEIGHT: 1.9,
     /** Radians per mouse pixel. */
@@ -98,6 +104,17 @@ export const DEFAULT_TUNING = {
     /** A path point counts as reached this close. */
     WAYPOINT_RADIUS: 1.5,
   },
+  /** GDD §12: render only. */
+  rear: {
+    /** Proxies show for enemies closer than this; covers CHARGE_RANGE_MAX. */
+    PROXY_RANGE: 40,
+    OPACITY: 0.6,
+    /** Without a line of sight: dimmer, shakier. */
+    HIDDEN_OPACITY: 0.25,
+    /** Per-frame shake, meters. */
+    JITTER: 0.1,
+    HIDDEN_JITTER: 0.6,
+  },
   /** GDD §4: vertex fisheye. */
   camera: {
     /** Horizontal field of view, degrees. */
@@ -106,7 +123,7 @@ export const DEFAULT_TUNING = {
     MAPPING: 'stereographic',
     PITCH_LIMIT: 85,
     NEAR: 0.05,
-    FAR: 60,
+    FAR: 120,
   },
   view: {
     /** Upper bound on devicePixelRatio. */
@@ -115,6 +132,11 @@ export const DEFAULT_TUNING = {
     INTERNAL_SCALE: 0.75,
     FOG_NEAR: 5,
     FOG_FAR: 20,
+    /**
+     * Enemies and the white START wall fade over a longer range, scaled from
+     * FOG_NEAR..FOG_FAR: landmarks seen early, not everywhere (GDD §10, §11).
+     */
+    SIGNAL_FOG_FAR: 60,
     /** World geometry is cut into quads this long: the fisheye bends only vertices. */
     MESH_SEGMENT: 1,
   },
@@ -152,7 +174,8 @@ export const DEFAULT_TUNING = {
 
 export type Tuning = typeof DEFAULT_TUNING;
 
-const STORAGE_KEY = 'fisheye.tuning.v1';
+/** v2 stores only values that differ from the defaults, so new defaults reach players. */
+const STORAGE_KEY = 'fisheye.tuning.v2';
 
 function clone<T>(v: T): T {
   return JSON.parse(JSON.stringify(v)) as T;
@@ -182,9 +205,24 @@ export function loadTuningOverrides(): void {
   }
 }
 
+/** Values of `values` that differ from `defaults`, grouped like the tuning object. */
+export function tuningOverrides(values: Tuning, defaults: Tuning): Record<string, Record<string, unknown>> {
+  const out: Record<string, Record<string, unknown>> = {};
+  const v = values as unknown as Record<string, Record<string, unknown>>;
+  const d = defaults as unknown as Record<string, Record<string, unknown>>;
+  for (const [group, keys] of Object.entries(d)) {
+    for (const [key, def] of Object.entries(keys)) {
+      const cur = v[group]?.[key];
+      const same = typeof cur === 'number' && typeof def === 'number' ? Math.abs(cur - def) < 1e-9 : cur === def;
+      if (!same) (out[group] ??= {})[key] = cur;
+    }
+  }
+  return out;
+}
+
 export function saveTuningOverrides(): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(tuning));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(tuningOverrides(tuning, DEFAULT_TUNING)));
   } catch {
     // ignore
   }
