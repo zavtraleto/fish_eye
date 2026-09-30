@@ -1,13 +1,14 @@
 import * as THREE from 'three';
 import type { Point } from '../sim/level/geometry';
-import type { Level, WallFace } from '../sim/level/level';
-import { sampleNodes } from '../sim/level/raster';
+import type { Level } from '../sim/level/level';
+import { levelSurface } from './levelSurface';
 import { patchMaterial } from './camera/fisheyeShader';
 
 // Greybox level geometry (VISUAL.md §2, §5) from the sim's raster level: floor
 // and ceiling are the free parts of raster cells, walls the contour segments,
-// all with shared vertices (VISUAL.md §11). Walls are cut in height by
-// `segment` so the vertex fisheye can bend them. Flat vertex colours, no lights.
+// all with shared vertices (VISUAL.md §11). Surfaces bend where there is flesh
+// (levelSurface.ts). Walls are cut in height by `segment` so the vertex
+// fisheye can bend them. Flat vertex colours, no lights.
 
 const COLORS = {
   floorA: 0x4a4d56,
@@ -89,30 +90,33 @@ function tileParity(x: number, z: number): number {
   return (Math.floor(x / TILE) + Math.floor(z / TILE)) & 1;
 }
 
-/** A convex piece as a fan at height y. */
-function addPiece(b: GeometryBuilder, pts: readonly Point[], y: number, hex: number): void {
-  const p0 = pts[0]!;
-  for (let k = 1; k + 1 < pts.length; k++) {
-    const p = pts[k]!;
-    const q = pts[k + 1]!;
-    b.tri({ x: p0.x, y, z: p0.z }, { x: p.x, y, z: p.z }, { x: q.x, y, z: q.z }, hex);
-  }
+/** A convex piece as a fan; each vertex at its own height (floor coves, ceiling vaults). */
+function addPiece(b: GeometryBuilder, pts: readonly Point[], height: (x: number, z: number) => number, hex: number): void {
+  const v = pts.map((p) => ({ x: p.x, y: height(p.x, p.z), z: p.z }));
+  for (let k = 1; k + 1 < v.length; k++) b.tri(v[0]!, v[k]!, v[k + 1]!, hex);
 }
 
-/** A wall quad cut in height only: contour segments are already shorter than a cell. */
-function addFace(b: GeometryBuilder, f: WallFace, seg: number, flesh: number): void {
-  const s = f.seg;
-  if (Math.hypot(s.bx - s.ax, s.bz - s.az) < 1e-6) return;
-  // Faces along x (normal along z) are lighter, as before.
-  const alongX = Math.abs(f.nz) >= Math.abs(f.nx);
-  const base = f.kind === 'start' ? COLORS.start : mix(alongX ? COLORS.wallX : COLORS.wallZ, alongX ? FLESH.wallX : FLESH.wallZ, flesh);
-  const ys = gridCuts(f.y0, f.y1, seg);
-  for (let j = 0; j + 1 < ys.length; j++) {
-    const y0 = ys[j]!;
-    const y1 = ys[j + 1]!;
+type Vertex = { x: number; y: number; z: number };
+
+/**
+ * A wall as a strip between two vertex columns, one per end: each column runs
+ * from that point's floor to its ceiling, cut on the world's height grid and
+ * bent along the point's normal. Columns depend on the point alone, so
+ * neighbouring walls share them exactly (VISUAL.md §11).
+ */
+function addWall(b: GeometryBuilder, a: Vertex[], c: Vertex[], base: number, band: boolean): void {
+  let i = 0;
+  let j = 0;
+  while (i < a.length - 1 || j < c.length - 1) {
+    const upA = j >= c.length - 1 || (i < a.length - 1 && a[i + 1]!.y <= c[j + 1]!.y);
+    const p = a[i]!;
+    const q = c[j]!;
+    const r = upA ? a[i + 1]! : c[j + 1]!;
     // A lighter band at waist height marks the wall's extent while running.
-    const hex = f.kind === 'wall' && y0 < 1.2 && y1 > 1.0 ? base + 0x080808 : base;
-    b.quad({ x: s.ax, y: y0, z: s.az }, { x: s.bx, y: y0, z: s.bz }, { x: s.bx, y: y1, z: s.bz }, { x: s.ax, y: y1, z: s.az }, hex);
+    const my = (p.y + q.y + r.y) / 3;
+    b.tri(p, q, r, band && my > 1.0 && my < 1.3 ? base + 0x080808 : base);
+    if (upA) i++;
+    else j++;
   }
 }
 
@@ -170,9 +174,7 @@ class Chunks {
  */
 export function buildLevelMesh(level: Level, segment: number, chunk: number): THREE.Group {
   const seg = Math.max(0.1, segment);
-  const density = level.density;
-  /** Flesh density at a point, 0 without flesh. */
-  const flesh = (x: number, z: number) => (density ? sampleNodes(level.frame, density, x, z) : 0);
+  const surf = levelSurface(level);
   const world = new Chunks(Math.max(4, chunk), false);
   const signal = new Chunks(Math.max(4, chunk), true);
   for (const piece of level.floor) {
@@ -180,14 +182,51 @@ export function buildLevelMesh(level: Level, segment: number, chunk: number): TH
     const cx = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
     const cz = pts.reduce((sum, p) => sum + p.z, 0) / pts.length;
     const b = world.at(cx, cz);
-    const t = flesh(cx, cz);
-    addPiece(b, pts, 0, tileParity(cx, cz) ? mix(COLORS.floorA, FLESH.floorA, t) : mix(COLORS.floorB, FLESH.floorB, t));
-    addPiece(b, pts, level.zones[piece.zone]!.height, mix(COLORS.ceiling, FLESH.ceiling, t));
+    const t = surf.flesh(cx, cz);
+    addPiece(b, pts, surf.floorY, tileParity(cx, cz) ? mix(COLORS.floorA, FLESH.floorA, t) : mix(COLORS.floorB, FLESH.floorB, t));
+    addPiece(b, pts, surf.ceilY, mix(COLORS.ceiling, FLESH.ceiling, t));
   }
+
+  // Vertex normals: the mean of the walls meeting at a point, so shared columns bend alike.
+  const key = (x: number, z: number) => `${x},${z}`;
+  const normals = new Map<string, [number, number]>();
   for (const f of level.faces) {
-    const mx = (f.seg.ax + f.seg.bx) / 2;
-    const mz = (f.seg.az + f.seg.bz) / 2;
-    addFace((f.kind === 'start' ? signal : world).at(mx, mz), f, seg, flesh(mx, mz));
+    for (const [x, z] of [
+      [f.seg.ax, f.seg.az],
+      [f.seg.bx, f.seg.bz],
+    ] as const) {
+      const n = normals.get(key(x, z)) ?? [0, 0];
+      normals.set(key(x, z), [n[0] + f.nx, n[1] + f.nz]);
+    }
+  }
+  const columns = new Map<string, Vertex[]>();
+  const column = (x: number, z: number, flat: boolean): Vertex[] => {
+    const k = key(x, z) + (flat ? '|flat' : '');
+    let col = columns.get(k);
+    if (col) return col;
+    const [sx, sz] = normals.get(key(x, z)) ?? [0, 0];
+    const len = Math.hypot(sx, sz) || 1;
+    const nx = sx / len;
+    const nz = sz / len;
+    col = gridCuts(surf.floorY(x, z), surf.ceilY(x, z), seg).map((y) => {
+      const o = flat ? 0 : surf.wallOffset(x, z, y, nx, nz);
+      return { x: x + nx * o, y, z: z + nz * o };
+    });
+    columns.set(k, col);
+    return col;
+  };
+  for (const f of level.faces) {
+    const s = f.seg;
+    if (Math.hypot(s.bx - s.ax, s.bz - s.az) < 1e-6) continue;
+    const white = f.kind === 'start';
+    const mx = (s.ax + s.bx) / 2;
+    const mz = (s.az + s.bz) / 2;
+    // The tint of the space this wall faces, not of what lies behind it.
+    const t = surf.flesh(mx + f.nx * 1.5, mz + f.nz * 1.5);
+    // Faces along x (normal along z) are lighter, as before.
+    const alongX = Math.abs(f.nz) >= Math.abs(f.nx);
+    const base = white ? COLORS.start : mix(alongX ? COLORS.wallX : COLORS.wallZ, alongX ? FLESH.wallX : FLESH.wallZ, t);
+    addWall((white ? signal : world).at(mx, mz), column(s.ax, s.az, white), column(s.bx, s.bz, white), base, !white);
   }
   const group = new THREE.Group();
   group.add(...world.meshes(), ...signal.meshes());

@@ -17,7 +17,7 @@ export interface Zone {
   module: ModuleKind;
   /** A point deep inside: route and spawn anchor. */
   anchor: Point;
-  /** Ceiling; render only. */
+  /** Base ceiling height; render only (the mesh blends it into one smooth ceiling). */
   height: number;
 }
 
@@ -64,6 +64,10 @@ export interface Level {
   density: Float32Array | null;
   /** Openings the flesh ate through walls, off the graph (GDD §6). */
   extraOpenings: number;
+  /** Signed distance to the walls per node of `frame`, meters (open > 0): render only (coves, vaults). */
+  wallDist: Float32Array;
+  /** Smooth ceiling base height per node of `frame`, meters: render only. */
+  ceiling: Float32Array;
   nav: NavGrid;
   /** The white wall: touching it in ESCAPE clears the level (GDD §10). */
   startWall: Segment;

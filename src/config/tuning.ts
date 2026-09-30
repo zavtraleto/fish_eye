@@ -178,13 +178,15 @@ export const DEFAULT_TUNING = {
     /** The white wall is at least this long (GDD §10). */
     START_WALL_MIN: 12,
     /** Ceilings, render only; every one clears a jump. */
-    HALL_HEIGHT_MIN: 10,
-    HALL_HEIGHT_MAX: 30,
-    GALLERY_HEIGHT_MIN: 6,
-    GALLERY_HEIGHT_MAX: 14,
-    THROAT_HEIGHT: 5,
-    START_HEIGHT: 8,
-    HEART_HEIGHT: 24,
+    HALL_HEIGHT_MIN: 12,
+    HALL_HEIGHT_MAX: 32,
+    GALLERY_HEIGHT_MIN: 9,
+    GALLERY_HEIGHT_MAX: 16,
+    THROAT_HEIGHT: 7,
+    START_HEIGHT: 10,
+    HEART_HEIGHT: 26,
+    /** Zone ceilings blur into one smooth ceiling over this many meters (render). */
+    CEILING_BLUR: 6,
     /** Whole-level tries (graph + geometry) before falling back to the test level. */
     LEVEL_TRIES: 20,
     /** Feature size of the flesh density noise, meters. */
@@ -251,6 +253,23 @@ export const DEFAULT_TUNING = {
     CHUNK_SIZE: 24,
     /** Extra distance past the fog before a chunk is hidden, meters. */
     CULL_MARGIN: 2,
+    /** Organic surfaces (GDD §6), scaled by the flesh density. Floor rises into walls this high… */
+    COVE_HEIGHT: 1.4,
+    /** …within this distance of them, meters: closer than the player ever stands. */
+    COVE_WIDTH: 1,
+    /** Ceilings sink toward the walls by this share of their height… */
+    VAULT: 0.35,
+    /** …over this distance from the walls, meters. */
+    VAULT_WIDTH: 9,
+    /** Ceiling bumps, meters. */
+    CEILING_NOISE: 5,
+    /** Where one can stand, the ceiling is never lower, meters. */
+    CEILING_MIN: 6,
+    /** Walls bulge in and out up to this much, meters. */
+    WALL_BULGE: 3,
+    /** Below this height a wall bulges into the open by at most WALL_INWARD_LOW, meters: sight matches collision. */
+    WALL_SAFE_HEIGHT: 4,
+    WALL_INWARD_LOW: 0.6,
   },
   /** GDD §10 */
   start: {

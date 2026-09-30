@@ -7,6 +7,7 @@ import type { FloorPiece, Level, ModuleKind, Portal, WallFace, Zone, ZoneRef } f
 import { NavField, type NavGrid } from './nav';
 import { lineOfSight } from './query';
 import { cellCenter, frameAround, sampleNodes, type GridFrame } from './raster';
+import { signedDistance } from './edt';
 import { openRockIslands } from './rock';
 import { labelCells, sampleField, type Shape } from './shapes';
 import { SegmentIndex } from './wallIndex';
@@ -103,6 +104,52 @@ function openSpan(f: GridFrame, field: Float32Array, ia: number, ja: number, ib:
 }
 
 const dist = (p: Point, q: Point) => Math.hypot(p.x - q.x, p.z - q.z);
+
+/**
+ * One smooth ceiling over the whole level, per node: zone heights blurred over
+ * `radius` meters, so a ceiling slopes from one space into the next instead of
+ * stepping (render only).
+ */
+function ceilingField(f: GridFrame, cellZone: Int16Array, zones: readonly Zone[], radius: number): Float32Array {
+  const w = f.w + 1;
+  const h = f.h + 1;
+  const sum = new Float32Array(w * h);
+  const weight = new Float32Array(w * h);
+  // Each node takes the heights of the open cells around it.
+  for (let j = 0; j < f.h; j++) {
+    for (let i = 0; i < f.w; i++) {
+      const z = cellZone[j * f.w + i]!;
+      if (z < 0) continue;
+      const hz = zones[z]!.height;
+      for (const k of [j * w + i, j * w + i + 1, (j + 1) * w + i, (j + 1) * w + i + 1]) {
+        sum[k] = sum[k]! + hz;
+        weight[k] = weight[k]! + 1;
+      }
+    }
+  }
+  const r = Math.max(1, Math.round(radius / f.cell));
+  // Separable box blur of sum and weight together: a weighted average over open nodes.
+  const blur = (a: Float32Array, len: number, stride: number, lines: number, step: number) => {
+    const line = new Float32Array(len);
+    for (let l = 0; l < lines; l++) {
+      const base = l * step;
+      let acc = 0;
+      for (let t = -r; t <= r; t++) acc += a[base + Math.min(len - 1, Math.max(0, t)) * stride]!;
+      for (let t = 0; t < len; t++) {
+        line[t] = acc;
+        acc += a[base + Math.min(len - 1, t + r + 1) * stride]! - a[base + Math.max(0, t - r) * stride]!;
+      }
+      for (let t = 0; t < len; t++) a[base + t * stride] = line[t]!;
+    }
+  };
+  for (const a of [sum, weight]) {
+    blur(a, w, 1, h, w);
+    blur(a, h, w, w, 1);
+  }
+  const out = new Float32Array(w * h);
+  for (let k = 0; k < w * h; k++) out[k] = weight[k]! > 0 ? sum[k]! / weight[k]! : 0;
+  return out;
+}
 
 /** Keeps the green line this far from walls where it has to bend, meters. */
 const ROUTE_CLEARANCE = 1.5;
@@ -249,9 +296,6 @@ export function buildLevel(def: LevelDef): Level {
         s.mz += ((p.z + q.z) / 2) * len;
         s.len += len;
         spans.set(k, s);
-        const ha = zones[za]!.height;
-        const hb = zones[zb]!.height;
-        if (ha !== hb) faces.push({ seg: { ax: p.x, az: p.z, bx: q.x, bz: q.z }, y0: Math.min(ha, hb), y1: Math.max(ha, hb), kind: 'wall', nx: di, nz: dj });
       }
     }
   }
@@ -359,6 +403,9 @@ export function buildLevel(def: LevelDef): Level {
   const next = route[1] ?? route[0]!;
 
   const floor: FloorPiece[] = pieces.map((p) => ({ points: p.points, zone: cellZone[p.cell]! }));
+  // Render data for the organic surfaces (GDD §6): distance to the walls and one smooth ceiling.
+  const wallDist = signedDistance(frame, field);
+  const ceiling = ceilingField(frame, cellZone, zones, tuning.gen.CEILING_BLUR);
 
   return {
     graph,
@@ -372,6 +419,8 @@ export function buildLevel(def: LevelDef): Level {
     floor,
     density,
     extraOpenings: extra,
+    wallDist,
+    ceiling,
     nav,
     startWall: def.startWall,
     spawn: { x: sx, z: sz, yaw: yawTo(next.x - sx, next.z - sz) },
