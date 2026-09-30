@@ -90,6 +90,8 @@ export interface GraphMetrics {
   junctions: number;
   /** Different START → heart paths no longer than ROUTE_STRETCH × the shortest. */
   routes: number;
+  /** Most spaces in a row with one way in and one way out (degree 2): a "corridor of rooms". */
+  chain: number;
   /** Graph steps from START to the heart. */
   heartDist: number;
 }
@@ -105,5 +107,29 @@ export function measure(nodes: readonly number[], edges: readonly Edge[], start:
     junctions: nodes.filter((n) => adj.get(n)!.length >= 3).length / Math.max(1, nodes.length),
     routes: Number.isFinite(heartDist) ? countRoutes(adj, start, heart, Math.floor(heartDist * stretch)) : 0,
     heartDist,
+    chain: longestChain(adj),
   };
+}
+
+/** Size of the largest connected group of degree-2 nodes. */
+export function longestChain(adj: Adjacency): number {
+  const seen = new Set<number>();
+  let best = 0;
+  for (const [n, list] of adj) {
+    if (list.length !== 2 || seen.has(n)) continue;
+    let size = 0;
+    const stack = [n];
+    seen.add(n);
+    while (stack.length) {
+      const m = stack.pop()!;
+      size++;
+      for (const k of adj.get(m)!) {
+        if (adj.get(k)!.length !== 2 || seen.has(k)) continue;
+        seen.add(k);
+        stack.push(k);
+      }
+    }
+    best = Math.max(best, size);
+  }
+  return best;
 }

@@ -6,12 +6,19 @@ import type { World } from '../sim/world';
 import { signalFogScale } from './camera/fisheyeShader';
 import { VertexFisheyeProjection, type Eye, type Projection } from './camera/projection';
 import { Actors } from './actors';
-import { buildLevelMesh } from './levelMesh';
+import { buildLevelMesh, chunkDistance, type ChunkBounds } from './levelMesh';
 import { RearVision } from './rearVision';
 
 // Greybox first-person view (docs/VISUAL.md): reads World, never mutates it.
 
 const FOG_COLOR = 0x05060a;
+
+function dispose(group: THREE.Group): void {
+  for (const m of group.children as THREE.Mesh[]) {
+    m.geometry.dispose();
+    (m.material as THREE.Material).dispose();
+  }
+}
 
 export class SceneRenderer {
   readonly renderer: THREE.WebGLRenderer;
@@ -23,7 +30,11 @@ export class SceneRenderer {
   private levelMesh: THREE.Group | null = null;
   /** Triangles of the level mesh, for the debug overlay (GDD §15.4). */
   levelTriangles = 0;
-  private meshKey: { level: Level; segment: number } | null = null;
+  /** Of those, the ones in chunks within the fog this frame. */
+  visibleTriangles = 0;
+  private meshKey: { level: Level; segment: number; chunk: number } | null = null;
+  /** The upcoming level's mesh, built while the level-clear screen shows. */
+  private pending: { level: Level; segment: number; chunk: number; mesh: THREE.Group } | null = null;
   private sizeKey = '';
   private width = 1;
   private height = 1;
@@ -43,6 +54,7 @@ export class SceneRenderer {
   render(world: World, look: Look, alpha: number, frameSeconds: number): void {
     this.syncSize();
     this.syncLevel(world.level);
+    this.prepare(world.upcomingLevel);
     this.fog.near = tuning.view.FOG_NEAR;
     this.fog.far = tuning.view.FOG_FAR;
     signalFogScale.value = tuning.view.FOG_FAR / Math.max(1e-3, tuning.view.SIGNAL_FOG_FAR);
@@ -57,6 +69,7 @@ export class SceneRenderer {
     this.eye.y = m.prevY + (m.y - m.prevY) * alpha + this.eyeHeight;
     this.eye.yaw = look.yaw;
     this.eye.pitch = look.pitch;
+    this.cullLevel();
     this.rear.update(world, this.eye, this.projection.halfFovH(), alpha);
     this.projection.render(this.renderer, this.scene, this.eye, this.width, this.height);
   }
@@ -76,19 +89,49 @@ export class SceneRenderer {
     this.renderer.setSize(this.width, this.height, false);
   }
 
-  /** Rebuilds the mesh for a new level or a new `MESH_SEGMENT`. */
+  /**
+   * Hides chunks the fog has swallowed whole (GDD §15.4): the plan distance
+   * never exceeds the radial fog distance, so nothing visible is ever cut.
+   */
+  private cullLevel(): void {
+    if (!this.levelMesh) return;
+    const v = tuning.view;
+    let tris = 0;
+    for (const m of this.levelMesh.children as THREE.Mesh[]) {
+      const b = m.userData.bounds as ChunkBounds;
+      m.visible = chunkDistance(b, this.eye.x, this.eye.z) < (b.signal ? v.SIGNAL_FOG_FAR : v.FOG_FAR) + v.CULL_MARGIN;
+      if (m.visible) tris += m.geometry.getAttribute('position').count / 3;
+    }
+    this.visibleTriangles = tris;
+  }
+
+  /** Builds the upcoming level's mesh ahead, so the new level shows without a stall. */
+  private prepare(level: Level | null): void {
+    if (!level || this.pending?.level === level) return;
+    if (this.pending) dispose(this.pending.mesh);
+    const segment = tuning.view.MESH_SEGMENT;
+    const chunk = tuning.view.CHUNK_SIZE;
+    this.pending = { level, segment, chunk, mesh: buildLevelMesh(level, segment, chunk) };
+  }
+
+  /** Rebuilds the mesh for a new level, `MESH_SEGMENT` or `CHUNK_SIZE`. */
   private syncLevel(level: Level): void {
     const segment = tuning.view.MESH_SEGMENT;
-    if (this.meshKey?.level === level && this.meshKey.segment === segment) return;
-    this.meshKey = { level, segment };
+    const chunk = tuning.view.CHUNK_SIZE;
+    if (this.meshKey?.level === level && this.meshKey.segment === segment && this.meshKey.chunk === chunk) return;
+    this.meshKey = { level, segment, chunk };
     if (this.levelMesh) {
       this.scene.remove(this.levelMesh);
-      for (const m of this.levelMesh.children as THREE.Mesh[]) {
-        m.geometry.dispose();
-        (m.material as THREE.Material).dispose();
-      }
+      dispose(this.levelMesh);
     }
-    this.levelMesh = buildLevelMesh(level, segment);
+    const p = this.pending;
+    if (p && p.level === level && p.segment === segment && p.chunk === chunk) {
+      this.levelMesh = p.mesh;
+    } else {
+      if (p) dispose(p.mesh);
+      this.levelMesh = buildLevelMesh(level, segment, chunk);
+    }
+    this.pending = null;
     this.scene.add(this.levelMesh);
     this.levelTriangles = (this.levelMesh.children as THREE.Mesh[]).reduce((s, m) => s + m.geometry.getAttribute('position').count / 3, 0);
   }

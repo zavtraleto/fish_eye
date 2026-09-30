@@ -98,28 +98,81 @@ function addFace(b: GeometryBuilder, f: WallFace, seg: number): void {
   }
 }
 
-/** The level; the white START wall is a separate signal mesh that fades over the long range (GDD §10). */
-export function buildLevelMesh(level: Level, segment: number): THREE.Group {
+/** Plan bounds of a chunk of the level mesh: the view hides chunks beyond the fog (GDD §15.4). */
+export interface ChunkBounds {
+  x0: number;
+  z0: number;
+  x1: number;
+  z1: number;
+  /** Signal geometry fades over the longer SIGNAL_FOG_FAR. */
+  signal: boolean;
+}
+
+/** Builders per square chunk of the plan; a piece goes to the chunk of its centre. */
+class Chunks {
+  private readonly map = new Map<string, GeometryBuilder>();
+  constructor(
+    private readonly size: number,
+    private readonly signal: boolean,
+  ) {}
+
+  at(x: number, z: number): GeometryBuilder {
+    const key = `${Math.floor(x / this.size)},${Math.floor(z / this.size)}`;
+    let b = this.map.get(key);
+    if (!b) {
+      b = new GeometryBuilder();
+      this.map.set(key, b);
+    }
+    return b;
+  }
+
+  meshes(): THREE.Mesh[] {
+    return [...this.map.values()].map((b) => {
+      const bounds: ChunkBounds = { x0: Infinity, z0: Infinity, x1: -Infinity, z1: -Infinity, signal: this.signal };
+      for (let k = 0; k < b.positions.length; k += 3) {
+        bounds.x0 = Math.min(bounds.x0, b.positions[k]!);
+        bounds.x1 = Math.max(bounds.x1, b.positions[k]!);
+        bounds.z0 = Math.min(bounds.z0, b.positions[k + 2]!);
+        bounds.z1 = Math.max(bounds.z1, b.positions[k + 2]!);
+      }
+      const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, fog: true });
+      patchMaterial(material, { signal: this.signal });
+      const mesh = new THREE.Mesh(b.build(), material);
+      // The fisheye sees far outside the camera's perspective frustum; the view culls chunks by distance instead.
+      mesh.frustumCulled = false;
+      mesh.userData.bounds = bounds;
+      return mesh;
+    });
+  }
+}
+
+/**
+ * The level in square chunks of `chunk` meters; the white START wall is
+ * separate signal geometry that fades over the long range (GDD §10).
+ */
+export function buildLevelMesh(level: Level, segment: number, chunk: number): THREE.Group {
   const seg = Math.max(0.1, segment);
-  const world = new GeometryBuilder();
-  const signal = new GeometryBuilder();
+  const world = new Chunks(Math.max(4, chunk), false);
+  const signal = new Chunks(Math.max(4, chunk), true);
   for (const piece of level.floor) {
     const pts = piece.points;
     const cx = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
     const cz = pts.reduce((sum, p) => sum + p.z, 0) / pts.length;
-    addPiece(world, pts, 0, tileParity(cx, cz) ? COLORS.floorA : COLORS.floorB);
-    addPiece(world, pts, level.zones[piece.zone]!.height, COLORS.ceiling);
+    const b = world.at(cx, cz);
+    addPiece(b, pts, 0, tileParity(cx, cz) ? COLORS.floorA : COLORS.floorB);
+    addPiece(b, pts, level.zones[piece.zone]!.height, COLORS.ceiling);
   }
-  for (const f of level.faces) addFace(f.kind === 'start' ? signal : world, f, seg);
-
+  for (const f of level.faces) {
+    const mx = (f.seg.ax + f.seg.bx) / 2;
+    const mz = (f.seg.az + f.seg.bz) / 2;
+    addFace((f.kind === 'start' ? signal : world).at(mx, mz), f, seg);
+  }
   const group = new THREE.Group();
-  for (const [b, isSignal] of [[world, false], [signal, true]] as const) {
-    const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, fog: true });
-    patchMaterial(material, { signal: isSignal });
-    const mesh = new THREE.Mesh(b.build(), material);
-    // The fisheye sees far outside the camera's perspective frustum.
-    mesh.frustumCulled = false;
-    group.add(mesh);
-  }
+  group.add(...world.meshes(), ...signal.meshes());
   return group;
+}
+
+/** Plan distance from (x, z) to a chunk's bounds; 0 inside. */
+export function chunkDistance(b: ChunkBounds, x: number, z: number): number {
+  return Math.hypot(Math.max(b.x0 - x, 0, x - b.x1), Math.max(b.z0 - z, 0, z - b.z1));
 }

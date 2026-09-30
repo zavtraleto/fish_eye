@@ -117,7 +117,7 @@ export const DEFAULT_TUNING = {
     /** Two edges of a node closer than this, degrees: the longer one is dropped. */
     EDGE_MIN_ANGLE: 25,
     /** New spaces per ear at most. */
-    EAR_MAX_NODES: 3,
+    EAR_MAX_NODES: 2,
     /** A chord joins spaces at least this many steps apart: a loop must shorten the way (Brogue). */
     LOOP_MIN_GRAPH_DIST: 3,
     /** A "different route" is at most this many times the shortest. */
@@ -185,7 +185,7 @@ export const DEFAULT_TUNING = {
     /** Whole-level tries (graph + geometry) before falling back to the test level. */
     LEVEL_TRIES: 20,
     /** Free-space raster step, meters: wall detail and floor tessellation. */
-    SDF_CELL: 0.5,
+    SDF_CELL: 1,
     /** Enemy navigation raster step, meters. */
     NAV_CELL: 1,
   },
@@ -224,6 +224,10 @@ export const DEFAULT_TUNING = {
     SIGNAL_FOG_FAR: 60,
     /** World geometry is cut into quads this long: the fisheye bends only vertices. */
     MESH_SEGMENT: 1,
+    /** The level mesh is split into square chunks this big; chunks beyond the fog are not drawn. */
+    CHUNK_SIZE: 24,
+    /** Extra distance past the fog before a chunk is hidden, meters. */
+    CULL_MARGIN: 2,
   },
   /** GDD §10 */
   start: {

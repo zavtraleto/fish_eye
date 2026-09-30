@@ -79,6 +79,11 @@ export class World {
     if (this.state === 'PLAYING') this.events.push({ type: 'runStarted' });
   }
 
+  /** The level built for after the level-clear screen, if any: the view prepares its mesh meanwhile. */
+  get upcomingLevel(): Level | null {
+    return this.nextLevel;
+  }
+
   get simFrozen(): boolean {
     return this.state !== 'PLAYING';
   }

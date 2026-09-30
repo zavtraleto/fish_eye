@@ -156,7 +156,7 @@ const loop = new GameLoop(
           `canvas ${view.renderer.domElement.width}×${view.renderer.domElement.height}\n` +
           `pos ${p.x.toFixed(2)} ${p.z.toFixed(2)}  speed ${Math.hypot(p.vx, p.vz).toFixed(2)}
 ` +
-          `level ${view.levelTriangles} tris, built in ${world.levelBuildMs.toFixed(1)} ms`,
+          `level ${view.visibleTriangles} / ${view.levelTriangles} tris drawn, built in ${world.levelBuildMs.toFixed(0)} ms`,
       });
     },
   },

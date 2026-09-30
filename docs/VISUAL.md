@@ -60,7 +60,7 @@
 | Проекция: интерфейс `Projection`, vertex fisheye | `src/render/camera/projection.ts` |
 | GLSL fisheye (патч `project_vertex`, радиальный туман), общие uniform'ы | `src/render/camera/fisheyeShader.ts` |
 | Математика проекций (тестируется) | `src/render/camera/fisheyeMath.ts` |
-| Пол и потолок из кусков клеток растра, стены из контура (`src/sim/level/contour.ts`), нарезка стен по высоте, цвета в вершинах | `src/render/levelMesh.ts` |
+| Пол и потолок из кусков клеток растра, стены из контура (`src/sim/level/contour.ts`), нарезка стен по высоте, цвета в вершинах; меш режется на куски, куски за туманом не рисуются (`SceneRenderer.cullLevel`) | `src/render/levelMesh.ts`, `src/render/scene.ts` |
 | EYE, зелёная линия (крест из двух лент), враг (замах — раздувается и мигает, таран — вытянут, появление — мерцает, оглушение — тусклый) | `src/render/actors.ts` |
 | Титул, HUD (в том числе ромб «рывок доступен» и полоска скольжения), экран уровня, пауза, смерть (вспышка, коллапс) | `src/ui/screens.ts`, `src/styles.css` |
 | Красная проекция врага за спиной: вид и математика зеркала | `src/render/rearVision.ts`, `src/render/rearMirror.ts` |

@@ -116,7 +116,10 @@ function addEdge(d: Draft, a: number, b: number): void {
  * bring the heart closer to START than the green line.
  */
 function addEar(rng: Rng, d: Draft, cand: Map<number, number[]>, k: number, start: number, heart: number, heartDist: number): boolean {
+  // Chords start from spaces with the fewest ways out, so corridors of rooms become a net.
+  const degree = adjacency([...d.nodes], d.edges);
   const existing = rng.shuffle([...d.nodes]);
+  if (k === 0) existing.sort((x, y) => degree.get(x)!.length - degree.get(y)!.length);
   for (const a of existing) {
     const path = k === 0 ? chord(rng, d, cand, a) : detour(rng, d, cand, a, k);
     if (!path) continue;
@@ -137,8 +140,11 @@ function addEar(rng: Rng, d: Draft, cand: Map<number, number[]>, k: number, star
 }
 
 function chord(rng: Rng, d: Draft, cand: Map<number, number[]>, a: number): number[] | null {
-  const dist = distances(adjacency([...d.nodes], d.edges), a);
-  for (const b of rng.shuffle([...(cand.get(a) ?? [])])) {
+  const adj = adjacency([...d.nodes], d.edges);
+  const dist = distances(adj, a);
+  // Spaces with one way in and one way out first: a chord makes them junctions.
+  const ends = rng.shuffle([...(cand.get(a) ?? [])]).sort((x, y) => (adj.get(x)?.length ?? 9) - (adj.get(y)?.length ?? 9));
+  for (const b of ends) {
     if (!d.nodes.has(b) || d.has.has(key(a, b))) continue;
     if ((dist.get(b) ?? Infinity) >= tuning.gen.LOOP_MIN_GRAPH_DIST) return [a, b];
   }
@@ -171,7 +177,7 @@ function detour(rng: Rng, d: Draft, cand: Map<number, number[]>, a: number, k: n
 function attempt(rng: Rng, p: StructureParams): Omit<StructureGraph, 'relaxed' | 'attempts'> | null {
   const g = tuning.gen;
   const spacing = noiseField(rng, g.SPACING_SCALE);
-  const points = scatterPoints(rng, Math.min(90, p.nodes * 3 + 6), g.POINT_SPACING_MIN, g.POINT_SPACING_MAX, spacing);
+  const points = scatterPoints(rng, Math.min(160, Math.round(p.nodes * 2.5) + 10), g.POINT_SPACING_MIN, g.POINT_SPACING_MAX, spacing);
   const tris = delaunay(points);
   const candidates = filterEdges(points, tris);
   const allowed = new Set(candidates.map((e) => key(e.a, e.b)));
@@ -194,7 +200,12 @@ function attempt(rng: Rng, p: StructureParams): Omit<StructureGraph, 'relaxed' |
   for (let i = 0; i < L; i++) addEdge(d, loop[i]!, loop[(i + 1) % L]!);
   let ears = 0;
   let failures = 0;
-  while ((d.nodes.size < p.nodes || ears < p.extraCycles) && failures < 20) {
+  // Spaces first (ears), then chords until the net is dense enough.
+  const junctions = () => {
+    const adj = adjacency([...d.nodes], d.edges);
+    return [...adj.values()].filter((l) => l.length >= 3).length / d.nodes.size;
+  };
+  while ((d.nodes.size < p.nodes || ears < p.extraCycles || junctions() < p.minJunctions) && failures < 40) {
     const missing = p.nodes - d.nodes.size;
     const k = missing > 0 ? rng.int(1, Math.min(g.EAR_MAX_NODES, missing)) : 0;
     if (addEar(rng, d, cand, k, start, heart, p.routeNodes - 1)) ears++;
@@ -208,13 +219,20 @@ function attempt(rng: Rng, p: StructureParams): Omit<StructureGraph, 'relaxed' |
     metrics.bridges === 0 &&
     metrics.cycles >= 1 + p.extraCycles &&
     metrics.heartDist === p.routeNodes - 1 &&
-    metrics.routes >= p.minRoutes;
+    metrics.routes >= p.minRoutes &&
+    metrics.junctions >= p.minJunctions &&
+    metrics.chain <= p.maxChain;
   return ok ? { points, candidates, nodes, edges: d.edges, loop, start, heart, route, metrics } : null;
 }
 
-/** Halfway to the floor, one target at a time: routes, cycles, spaces, then the loop; null at the floor. */
+/**
+ * Halfway to the floor, one target at a time: chains, junctions, routes,
+ * cycles, spaces, then the loop; null at the floor.
+ */
 function relax(p: StructureParams): StructureParams | null {
   const half = (v: number, floor: number) => v - Math.max(1, Math.ceil((v - floor) / 2));
+  if (p.maxChain < p.nodes) return { ...p, maxChain: p.nodes };
+  if (p.minJunctions > 0) return { ...p, minJunctions: 0 };
   if (p.minRoutes > 1) return { ...p, minRoutes: half(p.minRoutes, 1) };
   if (p.extraCycles > 0) return { ...p, extraCycles: half(p.extraCycles, 0) };
   if (p.nodes > p.loopNodes) return { ...p, nodes: half(p.nodes, p.loopNodes) };

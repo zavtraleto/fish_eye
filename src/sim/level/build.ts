@@ -32,8 +32,8 @@ export interface LevelDef {
 
 /** Rock around the shapes, meters. */
 const MARGIN = 2;
-/** Nav clearance is measured only this far, meters. */
-const CLEARANCE_MAX = 8;
+/** Nav clearance is measured only this far, meters: past the widest body that asks. */
+const CLEARANCE_MAX = 4;
 /** No portal of START may come this close to the white wall, meters. */
 const START_WALL_GAP = 1;
 
@@ -299,7 +299,10 @@ export function buildLevel(def: LevelDef): Level {
   const clearance = new Float32Array(navFrame.w * navFrame.h);
   for (let c = 0; c < clearance.length; c++) {
     const p = cellCenter(navFrame, c);
-    if (sampleNodes(frame, field, p.x, p.z) > 0) clearance[c] = wallIndex.distance(p.x, p.z, CLEARANCE_MAX);
+    // The union field is a lower bound of the distance to the walls (it reads low where shapes
+    // overlap): deep enough is enough, else measure exactly.
+    const depth = sampleNodes(frame, field, p.x, p.z);
+    if (depth > 0) clearance[c] = depth >= CLEARANCE_MAX ? CLEARANCE_MAX : wallIndex.distance(p.x, p.z, CLEARANCE_MAX);
   }
   const nav: NavGrid = { frame: navFrame, clearance };
 

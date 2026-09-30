@@ -95,7 +95,7 @@ describe('level build (GDD §7, §8, §10)', () => {
     const { frame, clearance } = level.nav;
     expect(clearance[cellAt(frame, 20, 30)]).toBe(0);
     const a = nodeAnchor(level, level.graph.eye);
-    expect(clearance[cellAt(frame, a.x, a.z)]).toBeGreaterThan(5);
+    expect(clearance[cellAt(frame, a.x, a.z)]).toBeGreaterThanOrEqual(tuning.enemy.RADIUS * 3); // measured up to a cap
   });
 
   it('the fixed level has no dead ends', () => {

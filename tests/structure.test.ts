@@ -65,6 +65,8 @@ describe('structure generation (GDD §6, §7)', () => {
         expect(g.nodes.length, at).toBe(want.nodes);
         expect(g.metrics.cycles, at).toBeGreaterThanOrEqual(1 + want.extraCycles);
         expect(g.metrics.routes, at).toBeGreaterThanOrEqual(want.minRoutes);
+        expect(g.metrics.junctions, at).toBeGreaterThanOrEqual(want.minJunctions);
+        expect(g.metrics.chain, at).toBeLessThanOrEqual(want.maxChain);
       }
     });
     expect(relaxed / total).toBeLessThan(0.02);
@@ -80,7 +82,7 @@ describe('structure generation (GDD §6, §7)', () => {
 
   it('always ends, relaxing impossible targets', () => {
     tuning.gen.GEN_MAX_ATTEMPTS = 20;
-    const g = generateStructure(new Rng(1), { nodes: 60, loopNodes: 12, routeNodes: 5, extraCycles: 40, minRoutes: 60 });
+    const g = generateStructure(new Rng(1), { nodes: 60, loopNodes: 12, routeNodes: 5, extraCycles: 40, minRoutes: 60, minJunctions: 0.9, maxChain: 0 });
     expect(g.relaxed).toBeGreaterThan(0);
     expect(bridges(adjacency(g.nodes, g.edges))).toEqual([]);
   }, 30000);

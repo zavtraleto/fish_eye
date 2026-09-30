@@ -12,25 +12,33 @@ export interface StructureParams {
   extraCycles: number;
   /** Different START → heart routes no longer than ROUTE_STRETCH × the shortest, at least. */
   minRoutes: number;
+  /** Share of spaces with three or more ways out, at least: a net, not a corridor of rooms. */
+  minJunctions: number;
+  /** Spaces in a row with one way in and one way out, at most. */
+  maxChain: number;
 }
 
-// nodes, loopNodes, routeNodes, extraCycles, minRoutes — for levels 1, 2, …; the last row repeats.
-const TABLE: readonly (readonly [number, number, number, number, number])[] = [
-  [6, 5, 3, 1, 1],
-  [7, 6, 3, 1, 1],
-  [8, 6, 4, 2, 2],
-  [10, 7, 4, 2, 2],
-  [11, 8, 4, 3, 2],
-  [12, 8, 5, 3, 2],
-  [14, 9, 5, 4, 2],
-  [15, 10, 5, 4, 2],
-  [17, 10, 6, 5, 2],
-  [18, 11, 6, 6, 2],
-  [20, 12, 7, 8, 2],
+// [decision 2026-09-30] a short ramp, then steep (GDD §13): levels 1–2 teach the loop,
+// from level 3 the structure grows by about four spaces a level into a tangled net.
+// nodes, loopNodes, routeNodes, extraCycles, minRoutes, minJunctions, maxChain — for
+// levels 1, 2, …; the last row repeats.
+const TABLE: readonly (readonly [number, number, number, number, number, number, number])[] = [
+  [7, 5, 3, 1, 1, 0.3, 3],
+  [9, 6, 3, 2, 1, 0.35, 3],
+  [14, 8, 4, 4, 2, 0.45, 2],
+  [18, 9, 5, 5, 2, 0.5, 2],
+  [22, 10, 5, 6, 3, 0.5, 2],
+  [26, 11, 6, 7, 3, 0.55, 2],
+  [30, 12, 6, 8, 3, 0.55, 2],
+  [34, 13, 7, 9, 3, 0.55, 2],
+  [38, 14, 7, 10, 3, 0.6, 2],
+  [42, 15, 8, 11, 3, 0.6, 2],
+  [46, 16, 8, 12, 3, 0.6, 2],
+  [50, 17, 9, 13, 3, 0.6, 2],
 ];
 
 export function levelStructure(level: number): StructureParams {
   const row = TABLE[Math.min(TABLE.length, Math.max(1, level)) - 1]!;
-  const [nodes, loopNodes, routeNodes, extraCycles, minRoutes] = row;
-  return { nodes, loopNodes, routeNodes, extraCycles, minRoutes };
+  const [nodes, loopNodes, routeNodes, extraCycles, minRoutes, minJunctions, maxChain] = row;
+  return { nodes, loopNodes, routeNodes, extraCycles, minRoutes, minJunctions, maxChain };
 }
