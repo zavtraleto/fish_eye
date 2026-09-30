@@ -71,6 +71,32 @@ body {
   letter-spacing: 0.4em;
 }
 
+.hud-dash {
+  width: 8px;
+  height: 8px;
+  margin: 6px auto 0;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 0 6px #000;
+  transform: rotate(45deg);
+}
+
+.hud-dash.ready {
+  background: #fff;
+}
+
+.hud-slide {
+  width: 120px;
+  height: 3px;
+  margin: 6px auto 0;
+}
+
+.hud-slide-fill {
+  height: 100%;
+  background: #fff;
+  box-shadow: 0 0 6px #000;
+  transform: scaleX(0);
+}
+
 .screen {
   position: absolute;
   left: 0;

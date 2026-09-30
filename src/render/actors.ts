@@ -1,15 +1,19 @@
 import * as THREE from 'three';
-import { tuning } from '../config/tuning';
+import { secondsToTicks as T, tuning } from '../config/tuning';
+import type { Enemy } from '../sim/enemy';
 import type { Point } from '../sim/level/geometry';
 import type { Level } from '../sim/level/level';
 import type { World } from '../sim/world';
 import { patchMaterial } from './camera/fisheyeShader';
 import { GeometryBuilder, cuts } from './levelMesh';
 
-// EYE and the green line (GDD §10, VISUAL.md §2). Neither fades in fog; both
-// vanish the moment the EYE is taken.
+// EYE, the green line (GDD §10) and the enemy (GDD §11), VISUAL.md §2. Signal
+// colours never fade in fog; the EYE and the line vanish the moment it is taken.
 
 const GREEN = 0x39ff6a;
+const RED = 0xff2a2a;
+const RED_FLASH = 0xff9a9a;
+const RED_DIM = 0x5a0e0e;
 
 function worldMaterial(params: THREE.MeshBasicMaterialParameters): THREE.MeshBasicMaterial {
   const m = new THREE.MeshBasicMaterial({ fog: false, ...params });
@@ -62,19 +66,34 @@ function buildEye(): THREE.Group {
   return g;
 }
 
+/** Greybox enemy: a low-poly red body with a snout pointing along its facing (-z). */
+function buildEnemy(material: THREE.MeshBasicMaterial): THREE.Group {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 1), material);
+  const snout = new THREE.Mesh(new THREE.ConeGeometry(0.45, 1.1, 5), material);
+  snout.rotation.x = -Math.PI / 2;
+  snout.position.z = -1.1;
+  g.add(body, snout);
+  g.traverse((o) => (o.frustumCulled = false));
+  return g;
+}
+
 export class Actors {
   readonly root = new THREE.Group();
   private readonly eye = buildEye();
   private readonly route: THREE.Mesh;
+  private readonly enemyMaterial = worldMaterial({ color: RED, transparent: true });
+  private readonly enemy = buildEnemy(this.enemyMaterial);
   private key: { level: Level; width: number; lift: number; segment: number } | null = null;
 
   constructor() {
     this.route = new THREE.Mesh(new THREE.BufferGeometry(), worldMaterial({ vertexColors: true, side: THREE.DoubleSide }));
     this.route.frustumCulled = false;
-    this.root.add(this.eye, this.route);
+    this.root.add(this.eye, this.route, this.enemy);
   }
 
-  update(world: World, frameSeconds: number): void {
+  update(world: World, frameSeconds: number, alpha: number): void {
+    this.updateEnemy(world, alpha);
     this.syncRoute(world.level);
     const inward = world.phase === 'INWARD';
     this.eye.visible = inward;
@@ -85,6 +104,47 @@ export class Actors {
     const k = tuning.eye.SIZE / 0.5;
     this.eye.scale.set(k, k * 0.85, k);
     if (!world.simFrozen) this.eye.rotation.y += tuning.eye.SPIN * frameSeconds;
+  }
+
+  /** Windup swells and flashes, a charge stretches, a spawn flickers, a stun goes dim (GDD §11). */
+  private updateEnemy(world: World, alpha: number): void {
+    const e: Enemy | null = world.enemy;
+    this.enemy.visible = e !== null;
+    if (!e) return;
+    const c = tuning.enemy;
+    this.enemy.position.set(e.prevX + (e.x - e.prevX) * alpha, c.HOVER + c.HEIGHT / 2, e.prevZ + (e.z - e.prevZ) * alpha);
+    this.enemy.rotation.set(0, e.yaw, 0);
+    const age = world.tick - e.stateTick;
+    const blink = (world.uiTick >> 2) % 2 === 0;
+    let sx = 1;
+    let sy = 1;
+    let sz = 1;
+    let color = RED;
+    let opacity = 1;
+    switch (e.state) {
+      case 'MATERIALIZE':
+        opacity = blink ? 0.6 : 0.2;
+        break;
+      case 'WINDUP': {
+        const k = Math.min(1, age / Math.max(1, T(c.WINDUP_TIME)));
+        sx = sy = sz = 1 + 0.3 * k;
+        color = blink ? RED_FLASH : RED;
+        break;
+      }
+      case 'CHARGE':
+        sx = sy = 0.75;
+        sz = 1.8;
+        break;
+      case 'STUNNED':
+        color = RED_DIM;
+        this.enemy.rotation.z = Math.sin(world.uiTick * 0.5) * 0.3;
+        break;
+      default:
+        break;
+    }
+    this.enemy.scale.set(c.RADIUS * sx, (c.HEIGHT / 2) * sy, c.RADIUS * sz);
+    this.enemyMaterial.color.setHex(color);
+    this.enemyMaterial.opacity = opacity;
   }
 
   private syncRoute(level: Level): void {

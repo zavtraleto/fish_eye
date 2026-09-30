@@ -77,6 +77,7 @@ const actions: DebugActions = {
   getSeed: () => world.seed,
   restart,
   kill: () => world.kill(),
+  spawnEnemy: () => world.spawnEnemy(),
   toEye: () => {
     const p = world.player;
     p.x = p.prevX = world.level.eye.x;

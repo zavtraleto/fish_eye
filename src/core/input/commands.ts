@@ -1,6 +1,6 @@
 // Abstract input (GDD §3). Devices write here; the simulation reads it once per tick.
 
-export type Button = 'forward' | 'back' | 'left' | 'right' | 'dash';
+export type Button = 'forward' | 'back' | 'left' | 'right' | 'jump';
 
 /**
  * `press`: a button went down (held state is read from `InputState.held`).
@@ -11,7 +11,7 @@ export type Command = { type: 'press'; button: Button } | { type: 'confirm' } | 
 export type HeldButtons = Record<Button, boolean>;
 
 export function noButtons(): HeldButtons {
-  return { forward: false, back: false, left: false, right: false, dash: false };
+  return { forward: false, back: false, left: false, right: false, jump: false };
 }
 
 /** View angles in radians. Yaw 0 looks along -z; positive yaw turns left (counter-clockwise from above). */

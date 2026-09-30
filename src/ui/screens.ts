@@ -1,6 +1,7 @@
 import { secondsToTicks as T, tuning } from '../config/tuning';
 import { t } from '../i18n';
 import type { RunResult } from '../sim/run';
+import { dashAvailable, slideTimeLeft } from '../sim/move/state';
 import type { World } from '../sim/world';
 import { formatClock, formatCount, formatSeconds } from './format';
 
@@ -13,6 +14,8 @@ export class Screens {
   private readonly hud: HTMLElement;
   private readonly hudEscape: HTMLElement;
   private readonly hudMain: HTMLElement;
+  private readonly dashPip: HTMLElement;
+  private readonly slideFill: HTMLElement;
   private readonly screen: HTMLElement;
   private readonly flash: HTMLElement;
   private screenKey = '';
@@ -28,7 +31,12 @@ export class Screens {
     this.hudMain = div('hud-main');
     this.hudEscape = div('hud-escape');
     this.hudEscape.textContent = t('hud.escape');
-    this.hud.append(this.hudMain, this.hudEscape);
+    // Dash available, slide time left (GDD §5.6).
+    this.dashPip = div('hud-dash');
+    const slideBar = div('hud-slide');
+    this.slideFill = div('hud-slide-fill');
+    slideBar.append(this.slideFill);
+    this.hud.append(this.hudMain, this.hudEscape, this.dashPip, slideBar);
     this.screen = div('screen');
     this.flash = div('death-flash');
     ui.append(this.flash, this.hud, this.screen);
@@ -44,6 +52,9 @@ export class Screens {
       const text = `${t('hud.eyes', { eyes: formatCount(world.run.eyesExtracted) })}   ${formatClock(runTime)}`;
       if (text !== this.hudKey) this.hudMain.textContent = this.hudKey = text;
       this.hudEscape.style.visibility = world.phase === 'ESCAPE' && s !== 'LEVEL_CLEAR' ? 'visible' : 'hidden';
+      const move = world.player.move;
+      this.dashPip.classList.toggle('ready', dashAvailable(move));
+      this.slideFill.style.transform = `scaleX(${slideTimeLeft(move, world.tick)})`;
     }
 
     this.updateDeath(world);

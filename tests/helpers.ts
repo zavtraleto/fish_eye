@@ -1,7 +1,7 @@
 import { tuning } from '../src/config/tuning';
 import { noButtons, type Command } from '../src/core/input/commands';
 import { closestOnSegment, type Point, type Segment } from '../src/sim/level/geometry';
-import { yawTo } from '../src/sim/player';
+import { yawTo } from '../src/sim/look';
 import type { World } from '../src/sim/world';
 
 /** Minimum distance from a point to any wall. */

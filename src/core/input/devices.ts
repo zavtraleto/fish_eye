@@ -12,7 +12,7 @@ const KEY_BUTTONS: Record<string, Button> = {
   ArrowLeft: 'left',
   KeyD: 'right',
   ArrowRight: 'right',
-  Space: 'dash',
+  Space: 'jump',
 };
 
 function isTextField(target: EventTarget | null): boolean {

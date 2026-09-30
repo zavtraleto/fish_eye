@@ -1,11 +1,16 @@
 import { secondsToTicks as T, tuning } from '../config/tuning';
 import type { Command, HeldButtons } from '../core/input/commands';
+import { Rng } from '../core/rng';
+import { chooseSpawnRoom, createEnemy, enemyTouches, stepEnemy, type Enemy } from './enemy';
 import type { SimEvent } from './events';
 import { buildLevel } from './level/build';
 import { closestOnSegment } from './level/geometry';
 import { fixedLayout } from './level/fixed';
 import type { Level } from './level/level';
-import { createPlayer, stepPlayer, type Player } from './player';
+import { locate, roomCenter } from './level/query';
+import { yawTo } from './look';
+import { stepPlayer } from './move/motion';
+import { createPlayer, type Player } from './player';
 import { newRunStats, type RunStats } from './run';
 
 // Pure simulation (GDD §15.1): no DOM, no Three.js, no Math.random().
@@ -46,16 +51,20 @@ export class World {
   levelNumber = 1;
   level!: Level;
   player!: Player;
+  /** Appears when the EYE is taken, from level `FIRST_LEVEL` (GDD §11.6). */
+  enemy: Enemy | null = null;
   /** Current level's INWARD and ESCAPE times, ticks. */
   inwardTicks = 0;
   escapeTicks = 0;
   readonly run: RunStats = newRunStats();
   readonly events: SimEvent[] = [];
   private resumeState: WorldState = 'PLAYING';
+  private readonly rngEnemy: Rng;
 
   constructor(opts: WorldOptions) {
     this.seed = opts.seed;
     this.cheats = opts.cheats ?? { god: false };
+    this.rngEnemy = new Rng(opts.seed).fork('enemy');
     this.state = opts.startState ?? 'TITLE';
     this.startLevel(1);
     if (this.state === 'PLAYING') this.events.push({ type: 'runStarted' });
@@ -89,6 +98,17 @@ export class World {
     this.events.push({ type: 'died' });
   }
 
+  /** Puts the enemy in a fair room (GDD §11.6); debug can call it any time. */
+  spawnEnemy(): void {
+    const p = this.player;
+    const area = locate(this.level, p.x, p.z);
+    const playerRoom = !area ? this.level.graph.eye : area.kind === 'room' ? area.room : area.a;
+    const room = chooseSpawnRoom(this.level, playerRoom, (n) => this.rngEnemy.int(0, n - 1));
+    const c = roomCenter(this.level, room);
+    this.enemy = createEnemy(c.x, c.z, yawTo(p.x - c.x, p.z - c.z), this.tick);
+    this.events.push({ type: 'enemySpawned' });
+  }
+
   private command(cmd: Command): void {
     const s = this.state;
     if (cmd.type === 'pause' && (s === 'PLAYING' || s === 'LEVEL_CLEAR')) {
@@ -101,7 +121,7 @@ export class World {
     } else if (cmd.type === 'confirm' && s === 'TITLE') {
       this.setState('PLAYING');
       this.events.push({ type: 'runStarted' });
-    } else if ((cmd.type === 'confirm' || (cmd.type === 'press' && cmd.button === 'dash')) && this.canRestart) {
+    } else if ((cmd.type === 'confirm' || (cmd.type === 'press' && cmd.button === 'jump')) && this.canRestart) {
       this.events.push({ type: 'restartRequested' });
     }
   }
@@ -116,6 +136,7 @@ export class World {
     this.level = buildLevel(fixedLayout());
     const { x, z } = this.level.spawn;
     this.player = createPlayer(x, z);
+    this.enemy = null;
     this.phase = 'INWARD';
     this.inwardTicks = 0;
     this.escapeTicks = 0;
@@ -129,14 +150,26 @@ export class World {
     else this.escapeTicks++;
 
     const p = this.player;
-    stepPlayer(p, input.held, input.yaw, this.level.walls, 1 / tuning.sim.SIM_HZ);
+    const pressed = input.commands.some((c) => c.type === 'press' && c.button === 'jump');
+    const moves = stepPlayer(p, { held: input.held, pressed, yaw: input.yaw }, this.level.walls, 1 / tuning.sim.SIM_HZ, this.tick);
+    this.events.push(...moves);
     this.run.distanceTravelled += Math.hypot(p.x - p.prevX, p.z - p.prevZ);
+
+    const e = this.enemy;
+    if (e) {
+      stepEnemy(e, this.level, p, this.tick, 1 / tuning.sim.SIM_HZ, this.events);
+      if (enemyTouches(e, p)) {
+        this.kill();
+        if (this.state !== 'PLAYING') return;
+      }
+    }
 
     if (this.phase === 'INWARD') {
       const eye = this.level.eye;
       if (Math.hypot(p.x - eye.x, p.z - eye.z) < tuning.player.RADIUS + tuning.eye.RADIUS) {
         this.phase = 'ESCAPE';
         this.events.push({ type: 'eyeTaken', level: this.levelNumber });
+        if (this.levelNumber >= tuning.enemy.FIRST_LEVEL) this.spawnEnemy();
       }
     } else if (this.touchesStartWall()) {
       this.clearLevel();

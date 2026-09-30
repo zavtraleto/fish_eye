@@ -23,6 +23,8 @@ export class SceneRenderer {
   private width = 1;
   private height = 1;
   private readonly eye: Eye = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };
+  /** Eye height above the feet, eased toward the slide height and back (GDD §5.6). */
+  private eyeHeight = tuning.player.EYE_HEIGHT;
 
   constructor(private readonly parent: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
@@ -38,12 +40,15 @@ export class SceneRenderer {
     this.syncLevel(world.level);
     this.fog.near = tuning.view.FOG_NEAR;
     this.fog.far = tuning.view.FOG_FAR;
-    this.actors.update(world, frameSeconds);
+    this.actors.update(world, frameSeconds, alpha);
 
     const p = world.player;
     this.eye.x = p.prevX + (p.x - p.prevX) * alpha;
     this.eye.z = p.prevZ + (p.z - p.prevZ) * alpha;
-    this.eye.y = tuning.player.EYE_HEIGHT;
+    const m = p.move;
+    const target = m.mode === 'slide' ? tuning.slide.EYE_HEIGHT : tuning.player.EYE_HEIGHT;
+    this.eyeHeight += (target - this.eyeHeight) * (1 - Math.exp(-frameSeconds / Math.max(1e-3, tuning.slide.CAMERA_TIME)));
+    this.eye.y = m.prevY + (m.y - m.prevY) * alpha + this.eyeHeight;
     this.eye.yaw = look.yaw;
     this.eye.pitch = look.pitch;
     this.projection.render(this.renderer, this.scene, this.eye, this.width, this.height);

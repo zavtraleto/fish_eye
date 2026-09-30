@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_TUNING, mergeTuning, secondsToTicks as T, tuning } from '../src/config/tuning';
 import { noButtons, type Button } from '../src/core/input/commands';
 import { rect, rectWalls, type Segment } from '../src/sim/level/geometry';
-import { createPlayer, moveAndSlide, stepPlayer, wishDir, yawAxes, yawTo, type Player } from '../src/sim/player';
+import { yawAxes, yawTo } from '../src/sim/look';
+import { stepPlayer } from '../src/sim/move/motion';
+import { createPlayer, moveAndSlide, wishDir, type Player } from '../src/sim/player';
 import { wallClearance } from './helpers';
 
 function held(...buttons: Button[]) {
@@ -14,7 +16,7 @@ function held(...buttons: Button[]) {
 const OPEN = rectWalls(rect(-500, -500, 500, 500));
 
 function run(p: Player, buttons: Button[], yaw: number, ticks: number, walls: readonly Segment[] = OPEN): void {
-  for (let i = 0; i < ticks; i++) stepPlayer(p, held(...buttons), yaw, walls, 1 / tuning.sim.SIM_HZ);
+  for (let i = 0; i < ticks; i++) stepPlayer(p, { held: held(...buttons), pressed: false, yaw }, walls, 1 / tuning.sim.SIM_HZ, i);
 }
 
 const speed = (p: Player) => Math.hypot(p.vx, p.vz);

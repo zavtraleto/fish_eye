@@ -1,9 +1,19 @@
 import { tuning } from '../config/tuning';
 import type { HeldButtons } from '../core/input/commands';
 import { closestOnSegment, type Segment } from './level/geometry';
+import { yawAxes } from './look';
+import { createMove, type MoveState } from './move/state';
 
-// Player movement (GDD §3.1): Quake-like acceleration and friction, circle
-// collision against wall segments with sliding and substeps.
+// The player (GDD §3.1): a circle on the floor plane that slides along wall
+// segments, plus the movement state of GDD §5. Motion lives in move/motion.ts.
+
+/** Anything that moves on the floor plane and collides with walls. */
+export interface Body {
+  x: number;
+  z: number;
+  vx: number;
+  vz: number;
+}
 
 export interface Player {
   x: number;
@@ -13,22 +23,11 @@ export interface Player {
   prevZ: number;
   vx: number;
   vz: number;
+  readonly move: MoveState;
 }
 
 export function createPlayer(x: number, z: number): Player {
-  return { x, z, prevX: x, prevZ: z, vx: 0, vz: 0 };
-}
-
-/** Unit forward and right vectors on the (x, z) plane for a yaw (0 looks along -z). */
-export function yawAxes(yaw: number): { fx: number; fz: number; rx: number; rz: number } {
-  const s = Math.sin(yaw);
-  const c = Math.cos(yaw);
-  return { fx: -s, fz: -c, rx: c, rz: -s };
-}
-
-/** Yaw that looks along (dx, dz); inverse of `yawAxes` forward. */
-export function yawTo(dx: number, dz: number): number {
-  return Math.atan2(-dx, -dz);
+  return { x, z, prevX: x, prevZ: z, vx: 0, vz: 0, move: createMove() };
 }
 
 /** Wished direction from held keys, normalized so a diagonal is no faster (GDD §3.1). */
@@ -43,19 +42,12 @@ export function wishDir(held: HeldButtons, yaw: number): { x: number; z: number 
   return { x: x / len, z: z / len };
 }
 
-export function stepPlayer(p: Player, held: HeldButtons, yaw: number, walls: readonly Segment[], dt: number): void {
-  const { MOVE_SPEED, ACCEL, FRICTION } = tuning.player;
-  const wish = wishDir(held, yaw);
-  const moving = wish.x !== 0 || wish.z !== 0;
-  approachVelocity(p, wish.x * MOVE_SPEED, wish.z * MOVE_SPEED, (moving ? ACCEL : FRICTION) * dt);
-
-  p.prevX = p.x;
-  p.prevZ = p.z;
-  moveAndSlide(p, walls, dt);
+export function horizontalSpeed(p: Player): number {
+  return Math.hypot(p.vx, p.vz);
 }
 
 /** Moves the velocity toward the target by at most `maxDelta`. */
-function approachVelocity(p: Player, tx: number, tz: number, maxDelta: number): void {
+export function approachVelocity(p: Body, tx: number, tz: number, maxDelta: number): void {
   const dx = tx - p.vx;
   const dz = tz - p.vz;
   const d = Math.hypot(dx, dz);
@@ -73,8 +65,7 @@ function approachVelocity(p: Player, tx: number, tz: number, maxDelta: number): 
  * radius, so the centre never crosses a wall), pushing out of walls after each
  * and dropping the velocity component into them.
  */
-export function moveAndSlide(p: Player, walls: readonly Segment[], dt: number): void {
-  const radius = tuning.player.RADIUS;
+export function moveAndSlide(p: Body, walls: readonly Segment[], dt: number, radius = tuning.player.RADIUS): void {
   const maxStep = Math.max(0.01, Math.min(tuning.player.SUBSTEP, radius * 0.5));
   const dist = Math.hypot(p.vx, p.vz) * dt;
   const steps = Math.max(1, Math.ceil(dist / maxStep));
@@ -87,7 +78,7 @@ export function moveAndSlide(p: Player, walls: readonly Segment[], dt: number): 
 }
 
 /** Two passes settle inside corners, where pushing out of one wall pushes into another. */
-function resolveWalls(p: Player, walls: readonly Segment[], radius: number): void {
+function resolveWalls(p: Body, walls: readonly Segment[], radius: number): void {
   for (let pass = 0; pass < 2; pass++) {
     let touched = false;
     for (const w of walls) {

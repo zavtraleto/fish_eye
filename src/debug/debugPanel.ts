@@ -25,6 +25,7 @@ export interface DebugActions {
   kill(): void;
   /** Teleports the player next to the EYE. */
   toEye(): void;
+  spawnEnemy(): void;
   setOverlayVisible(v: boolean): void;
   setLogEvents(v: boolean): void;
   cheats: Cheats;
@@ -304,6 +305,7 @@ export class DebugPanel {
     const cf = folder('Cheats');
     cf.addBinding(a.cheats, 'god', { label: 'god mode' });
     cf.addButton({ title: 'teleport to EYE' }).on('click', () => a.toEye());
+    cf.addButton({ title: 'spawn enemy' }).on('click', () => a.spawnEnemy());
     cf.addButton({ title: 'kill player' }).on('click', () => a.kill());
   }
 

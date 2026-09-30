@@ -3,7 +3,7 @@
 export const en = {
   'title.name': 'FISH EYE',
   'title.start': 'CLICK TO START',
-  'title.controls': 'MOUSE  LOOK    WASD  MOVE    ESC  PAUSE',
+  'title.controls': 'MOUSE  LOOK    WASD  MOVE    SPACE  JUMP / AIR DASH / HOLD TO SLIDE    ESC  PAUSE',
   'best.line': 'BEST  {eyes} EYES  {time}',
   'hud.eyes': 'EYES {eyes}',
   'hud.escape': 'ESCAPE',

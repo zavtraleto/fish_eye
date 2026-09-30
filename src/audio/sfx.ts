@@ -23,6 +23,19 @@ export class Sfx {
       case 'runStarted':
         this.tone(220, 0.08, 'square', 0.15, 440);
         break;
+      case 'jumped':
+        this.tone(e.kind === 'bhop' ? 330 : 260, 0.08, 'sine', 0.15, e.kind === 'slide' ? 520 : 390);
+        break;
+      case 'dashed':
+        this.noise(0.12, 0.15);
+        this.tone(180, 0.12, 'sine', 0.2, 90);
+        break;
+      case 'slideStarted':
+        this.noise(0.3, 0.08);
+        break;
+      case 'landed':
+        this.tone(90, 0.06, 'sine', 0.15, 60);
+        break;
       case 'eyeTaken':
         // Wrong-sounding chord sliding down: the line is gone, now run.
         this.tone(660, 0.6, 'sawtooth', 0.12, 330);
@@ -32,6 +45,21 @@ export class Sfx {
       case 'levelCleared':
         this.tone(523, 0.12, 'triangle', 0.25);
         this.tone(784, 0.25, 'triangle', 0.25, undefined, 0.08);
+        break;
+      case 'enemySpawned':
+        // Far away, low.
+        this.tone(55, 1.2, 'sawtooth', 0.12, 45);
+        break;
+      case 'enemyWindup':
+        // Must be heard: it is half the telegraph (GDD §11.3).
+        this.tone(200, 0.45, 'square', 0.22, 800);
+        break;
+      case 'enemyCharged':
+        this.noise(0.35, 0.3);
+        break;
+      case 'enemyStunned':
+        this.tone(70, 0.3, 'square', 0.35, 40);
+        this.noise(0.15, 0.3);
         break;
       case 'died':
         this.noise(0.5, 0.5);

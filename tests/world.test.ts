@@ -101,7 +101,7 @@ describe('run loop (GDD §2, §14)', () => {
     expect(w.events.some((e) => e.type === 'restartRequested')).toBe(false);
     idle(w, 1);
     expect(w.canRestart).toBe(true);
-    idle(w, 1, [{ type: 'press', button: 'dash' }]);
+    idle(w, 1, [{ type: 'press', button: 'jump' }]);
     expect(w.events).toContainEqual({ type: 'restartRequested' });
   });
 

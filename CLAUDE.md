@@ -10,7 +10,7 @@ Vite + TypeScript (strict) + Three.js. Target: desktop Chrome, keyboard + mouse,
 
 ## Status
 
-Phase 1 done (movement, vertex fisheye projection). Phase 2 in progress: the run loop on a fixed test level (`src/sim/level/fixed.ts` → `build.ts`), screens, HUD, sounds. No enemy yet: death only from the debug panel.
+Phases 1–2 done: movement, vertex fisheye, the run loop on a fixed test level (`src/sim/level/fixed.ts` → `build.ts`), screens, HUD, placeholder sounds. Phase 3 (one-button moveset: jump, air dash, slide; `src/sim/move/`, GDD §5) awaits a playtest. Phase 4 in progress: the enemy (`src/sim/enemy.ts`, level queries in `src/sim/level/query.ts`, GDD §11).
 
 ## Language
 
@@ -60,7 +60,7 @@ src/i18n/     player-facing strings
 Invariants:
 
 - **Fixed 60 Hz step.** Durations live in `tuning` as seconds; convert with `secondsToTicks()`. Never hardcode numbers in logic.
-- **The sim world is the (x, z) plane in meters.** Player and enemy are circles, walls are segments. Height exists only as render data.
+- **The sim world is the (x, z) plane in meters.** Player and enemy are circles, walls are segments; the level is 2D and the floor is flat at y = 0. Actors also have a height (`y`, body height) for jumps and 3D contact (GDD §5); ceilings and room heights are render data only.
 - **Mouse look is applied to the camera every render frame**, not per tick. The sim receives the current yaw in `StepInput` each tick.
 - **Two clocks in `World`:** `tick` advances only while playing; `uiTick` always advances. Gameplay timers use `tick`, so they freeze on pause. Render with `alpha = 0` while `world.simFrozen`.
 - **Input is abstract.** Devices push `Command`s into `InputState`; `World.step()` consumes them once per tick.

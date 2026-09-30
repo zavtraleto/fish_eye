@@ -1,9 +1,9 @@
 import { tuning } from '../../config/tuning';
-import { yawTo } from '../player';
+import { yawTo } from '../look';
 import { rect, type Point, type Rect, type Segment } from './geometry';
 import { hasEdge } from './graph';
 import type { Layout, LayoutRoom } from './layout';
-import type { Area, Level, WallFace } from './level';
+import type { Area, Door, Level, WallFace } from './level';
 
 // Layout → Level (GDD §8): corridors between rooms, room sides minus openings
 // become wall segments, lintels above openings, the white START wall, spawn
@@ -21,15 +21,6 @@ interface Opening {
   hi: number;
   /** Corridor ceiling: the room wall above it is a lintel. */
   height: number;
-}
-
-interface PlacedCorridor {
-  a: number;
-  b: number;
-  sideA: Side;
-  sideB: Side;
-  lo: number;
-  hi: number;
 }
 
 function sideSegment(r: Rect, side: Side): Segment {
@@ -98,10 +89,10 @@ export function buildLevel(layout: Layout): Level {
     return r;
   };
   const openings = new Map<number, Record<Side, Opening[]>>(layout.rooms.map((r) => [r.id, { x0: [], x1: [], z0: [], z1: [] }]));
-  const areas: Area[] = layout.rooms.map((r) => ({ kind: 'room', rect: r.rect, height: r.height }));
+  const areas: Area[] = layout.rooms.map((r) => ({ kind: 'room', room: r.id, rect: r.rect, height: r.height }));
+  const doors: Door[] = [];
   const walls: Segment[] = [];
   const faces: WallFace[] = [];
-  const placed: PlacedCorridor[] = [];
 
   const addWall = (seg: Segment, y0: number, y1: number, kind: WallFace['kind'] = 'wall', solid = true) => {
     if (solid) walls.push(seg);
@@ -111,10 +102,11 @@ export function buildLevel(layout: Layout): Level {
   for (const c of layout.corridors) {
     if (!hasEdge(graph, c.a, c.b)) throw new Error(`corridor ${c.a}-${c.b} is not a graph edge`);
     const p = placeCorridor(room(c.a).rect, room(c.b).rect, c.width);
-    areas.push({ kind: 'corridor', rect: p.rect, height: c.height });
+    areas.push({ kind: 'corridor', a: c.a, b: c.b, rect: p.rect, height: c.height });
     openings.get(c.a)![p.sideA].push({ lo: p.lo, hi: p.hi, height: c.height });
     openings.get(c.b)![p.sideB].push({ lo: p.lo, hi: p.hi, height: c.height });
-    placed.push({ a: c.a, b: c.b, sideA: p.sideA, sideB: p.sideB, lo: p.lo, hi: p.hi });
+    const mid = (p.lo + p.hi) / 2;
+    doors.push({ a: c.a, b: c.b, pa: pointOnSide(room(c.a).rect, p.sideA, mid), pb: pointOnSide(room(c.b).rect, p.sideB, mid) });
     const r = p.rect;
     const sides: Side[] = p.alongX ? ['z0', 'z1'] : ['x0', 'x1'];
     for (const s of sides) addWall(sideSegment(r, s), 0, c.height);
@@ -122,12 +114,9 @@ export function buildLevel(layout: Layout): Level {
 
   /** Opening midpoints on both rooms for the corridor from `a` to `b`. */
   const doorway = (a: number, b: number): [Point, Point] => {
-    const p = placed.find((c) => (c.a === a && c.b === b) || (c.a === b && c.b === a));
-    if (!p) throw new Error(`no corridor ${a}-${b}`);
-    const mid = (p.lo + p.hi) / 2;
-    const onA = pointOnSide(room(p.a).rect, p.sideA, mid);
-    const onB = pointOnSide(room(p.b).rect, p.sideB, mid);
-    return p.a === a ? [onA, onB] : [onB, onA];
+    const d = doors.find((c) => (c.a === a && c.b === b) || (c.a === b && c.b === a));
+    if (!d) throw new Error(`no corridor ${a}-${b}`);
+    return d.a === a ? [d.pa, d.pb] : [d.pb, d.pa];
   };
 
   // Route: START centre → opening → opening → room centre → … → EYE (GDD §10).
@@ -183,6 +172,7 @@ export function buildLevel(layout: Layout): Level {
   return {
     graph,
     areas,
+    doors,
     walls,
     faces,
     startWall,
