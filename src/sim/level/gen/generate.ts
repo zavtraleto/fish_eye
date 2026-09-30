@@ -1,9 +1,10 @@
 import { tuning } from '../../../config/tuning';
 import { Rng } from '../../../core/rng';
-import { levelStructure } from '../../../data/difficulty';
+import { levelFlesh, levelStructure } from '../../../data/difficulty';
 import { buildLevel } from '../build';
 import { fixedLevel } from '../fixed';
 import type { Level } from '../level';
+import { fleshDeform } from './flesh';
 import { skeletonDef } from './skeleton';
 import { generateStructure, type StructureGraph } from './structure';
 
@@ -23,7 +24,9 @@ export function generateLevel(seed: number, n: number): GeneratedLevel {
   for (let tries = 1; tries <= tuning.gen.LEVEL_TRIES; tries++) {
     const structure = generateStructure(rng, levelStructure(n));
     try {
-      return { level: buildLevel(skeletonDef(rng, structure)), structure, tries };
+      const def = skeletonDef(rng, structure);
+      def.deform = fleshDeform(rng, structure, def.startWall, levelFlesh(n));
+      return { level: buildLevel(def), structure, tries };
     } catch {
       // Rejected geometry: the next try draws a new structure from the same stream.
     }

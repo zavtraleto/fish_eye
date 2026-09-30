@@ -60,6 +60,10 @@ export interface Level {
   wallIndex: SegmentIndex;
   faces: readonly WallFace[];
   floor: readonly FloorPiece[];
+  /** Flesh density per node of `frame` (0 bare … 1 flesh), for the renderer's tint; null without flesh. */
+  density: Float32Array | null;
+  /** Openings the flesh ate through walls, off the graph (GDD §6). */
+  extraOpenings: number;
   nav: NavGrid;
   /** The white wall: touching it in ESCAPE clears the level (GDD §10). */
   startWall: Segment;

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Point } from '../sim/level/geometry';
 import type { Level, WallFace } from '../sim/level/level';
+import { sampleNodes } from '../sim/level/raster';
 import { patchMaterial } from './camera/fisheyeShader';
 
 // Greybox level geometry (VISUAL.md §2, §5) from the sim's raster level: floor
@@ -17,6 +18,22 @@ const COLORS = {
   /** START / EXIT (VISUAL.md §2). */
   start: 0xf4f4ec,
 };
+/** Flesh (GDD §6): the same roles, dark and warm — never red, red is the enemy's (VISUAL.md §1). */
+const FLESH = {
+  floorA: 0x4b3f3b,
+  floorB: 0x413633,
+  ceiling: 0x2b2321,
+  wallX: 0x40332f,
+  wallZ: 0x372b28,
+};
+const mixA = new THREE.Color();
+const mixB = new THREE.Color();
+
+/** Machine colour `a` toward flesh colour `b` by t. */
+function mix(a: number, b: number, t: number): number {
+  if (t <= 0) return a;
+  return mixA.setHex(a).lerp(mixB.setHex(b), Math.min(1, t)).getHex();
+}
 /** Checker tile of the floor, meters: gives a sense of speed. */
 const TILE = 2;
 
@@ -83,11 +100,12 @@ function addPiece(b: GeometryBuilder, pts: readonly Point[], y: number, hex: num
 }
 
 /** A wall quad cut in height only: contour segments are already shorter than a cell. */
-function addFace(b: GeometryBuilder, f: WallFace, seg: number): void {
+function addFace(b: GeometryBuilder, f: WallFace, seg: number, flesh: number): void {
   const s = f.seg;
   if (Math.hypot(s.bx - s.ax, s.bz - s.az) < 1e-6) return;
   // Faces along x (normal along z) are lighter, as before.
-  const base = f.kind === 'start' ? COLORS.start : Math.abs(f.nz) >= Math.abs(f.nx) ? COLORS.wallX : COLORS.wallZ;
+  const alongX = Math.abs(f.nz) >= Math.abs(f.nx);
+  const base = f.kind === 'start' ? COLORS.start : mix(alongX ? COLORS.wallX : COLORS.wallZ, alongX ? FLESH.wallX : FLESH.wallZ, flesh);
   const ys = gridCuts(f.y0, f.y1, seg);
   for (let j = 0; j + 1 < ys.length; j++) {
     const y0 = ys[j]!;
@@ -152,6 +170,9 @@ class Chunks {
  */
 export function buildLevelMesh(level: Level, segment: number, chunk: number): THREE.Group {
   const seg = Math.max(0.1, segment);
+  const density = level.density;
+  /** Flesh density at a point, 0 without flesh. */
+  const flesh = (x: number, z: number) => (density ? sampleNodes(level.frame, density, x, z) : 0);
   const world = new Chunks(Math.max(4, chunk), false);
   const signal = new Chunks(Math.max(4, chunk), true);
   for (const piece of level.floor) {
@@ -159,13 +180,14 @@ export function buildLevelMesh(level: Level, segment: number, chunk: number): TH
     const cx = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
     const cz = pts.reduce((sum, p) => sum + p.z, 0) / pts.length;
     const b = world.at(cx, cz);
-    addPiece(b, pts, 0, tileParity(cx, cz) ? COLORS.floorA : COLORS.floorB);
-    addPiece(b, pts, level.zones[piece.zone]!.height, COLORS.ceiling);
+    const t = flesh(cx, cz);
+    addPiece(b, pts, 0, tileParity(cx, cz) ? mix(COLORS.floorA, FLESH.floorA, t) : mix(COLORS.floorB, FLESH.floorB, t));
+    addPiece(b, pts, level.zones[piece.zone]!.height, mix(COLORS.ceiling, FLESH.ceiling, t));
   }
   for (const f of level.faces) {
     const mx = (f.seg.ax + f.seg.bx) / 2;
     const mz = (f.seg.az + f.seg.bz) / 2;
-    addFace((f.kind === 'start' ? signal : world).at(mx, mz), f, seg);
+    addFace((f.kind === 'start' ? signal : world).at(mx, mz), f, seg, flesh(mx, mz));
   }
   const group = new THREE.Group();
   group.add(...world.meshes(), ...signal.meshes());

@@ -29,6 +29,8 @@ export interface LevelDef {
   shapes: readonly ShapeDef[];
   /** A straight side of the START shape with no portal on it (GDD §10). */
   startWall: Segment;
+  /** Flesh (GDD §6): rewrites the open field in place, returns the flesh density per node (render tint). */
+  deform?: (frame: GridFrame, field: Float32Array) => Float32Array;
 }
 
 /** Rock around the shapes, meters. */
@@ -161,6 +163,9 @@ export function buildLevel(def: LevelDef): Level {
   const shapes = def.shapes.map((s) => s.shape);
   const field = sampleField(shapes, frame);
   openRockIslands(frame, field, tuning.gen.ROCK_MIN_AREA, tuning.gen.ROCK_MIN_THICKNESS);
+  const density = def.deform ? def.deform(frame, field) : null;
+  // Growths are not islands to open; anything else the flesh cut off is.
+  if (def.deform) openRockIslands(frame, field, tuning.gen.ROCK_MIN_AREA * 0.25, tuning.gen.ROCK_MIN_THICKNESS * 0.5);
   const owner = labelCells(shapes, frame);
   const { walls: edges, pieces } = contour(frame, field);
 
@@ -258,12 +263,17 @@ export function buildLevel(def: LevelDef): Level {
     return { a: s.a, b: s.b, p0, p1, mid };
   });
   // No passage the graph does not have (GDD §7 step 9): zones may meet only if they share a node.
+  // Flesh may eat through a thin wall (GDD §6): such extra openings stay, off the graph —
+  // the green line and spawns use the skeleton's passages, the enemy's raster uses them all.
   const ends = (r: ZoneRef) => (r.kind === 'node' ? [r.node] : [r.a, r.b]);
+  let extra = 0;
   for (const p of portals) {
     const ra = zones[p.a]!.ref;
     const rb = zones[p.b]!.ref;
     const ok = ra.kind === 'node' && rb.kind === 'node' ? hasEdge(graph, ra.node, rb.node) : ends(ra).some((n) => ends(rb).includes(n));
-    if (!ok) throw new Error(`zones ${refKey(ra)} and ${refKey(rb)} meet, but the graph has no such passage`);
+    if (ok) continue;
+    if (!def.deform) throw new Error(`zones ${refKey(ra)} and ${refKey(rb)} meet, but the graph has no such passage`);
+    extra++;
   }
 
   // Every graph edge must open: room–corridor–room, or room–room directly.
@@ -360,6 +370,8 @@ export function buildLevel(def: LevelDef): Level {
     wallIndex,
     faces,
     floor,
+    density,
+    extraOpenings: extra,
     nav,
     startWall: def.startWall,
     spawn: { x: sx, z: sz, yaw: yawTo(next.x - sx, next.z - sz) },

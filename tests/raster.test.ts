@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { rect } from '../src/sim/level/geometry';
 import { cellAt, cellCenter, frameAround, nodePoint, sampleNodes } from '../src/sim/level/raster';
+import { signedDistance } from '../src/sim/level/edt';
 import { openRockIslands } from '../src/sim/level/rock';
 import { boxShape, labelCells, polygonShape, sampleField, stripShape } from '../src/sim/level/shapes';
 
@@ -112,5 +113,17 @@ describe('rock islands (GDD §6)', () => {
     const field = sampleField([boxShape(rect(0, 0, 10, 10))], f);
     expect(openRockIslands(f, field, 1e6, 1e6)).toBe(0);
     expect(sampleNodes(f, field, -1, -1)).toBeLessThan(0);
+  });
+});
+
+describe('signed distance (GDD §6: flesh)', () => {
+  it('measures the distance to the walls, positive in the open and negative in rock', () => {
+    const f = frameAround(0, 0, 20, 10, 1, 4);
+    const sd = signedDistance(f, sampleField([boxShape(rect(0, 0, 20, 10))], f));
+    // Boundary nodes read 0 (rock), so the wall sits half a cell inside: depth 5 → 4.5.
+    expect(sampleNodes(f, sd, 10, 5)).toBeCloseTo(4.5);
+    expect(sampleNodes(f, sd, 2, 5)).toBeCloseTo(1.5);
+    expect(sampleNodes(f, sd, -3, 5)).toBeCloseTo(-3.5);
+    expect(sampleNodes(f, sd, -3, -4)).toBeCloseTo(-(Math.hypot(4, 5) - 0.5));
   });
 });

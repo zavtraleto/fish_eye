@@ -37,6 +37,35 @@ const TABLE: readonly (readonly [number, number, number, number, number, number,
   [50, 17, 9, 13, 3, 0.7, 2],
 ];
 
+/** The flesh of a level (GDD §6): how honestly its density leads from START to the heart. */
+export interface FleshParams {
+  /** Weight of the START → heart gradient against noise, 0…1. */
+  gradient: number;
+  /** Chance a space lies about its depth: flesh near START, bare near the heart. */
+  deception: number;
+}
+
+// [decision 2026-09-30] strong and honest first, weaker and lying later (GDD §13). gradient, deception.
+const FLESH: readonly (readonly [number, number])[] = [
+  [1.0, 0],
+  [0.9, 0],
+  [0.8, 0.1],
+  [0.75, 0.15],
+  [0.7, 0.2],
+  [0.6, 0.25],
+  [0.55, 0.3],
+  [0.5, 0.35],
+  [0.45, 0.4],
+  [0.4, 0.45],
+  [0.35, 0.5],
+  [0.3, 0.5],
+];
+
+export function levelFlesh(level: number): FleshParams {
+  const [gradient, deception] = FLESH[Math.min(FLESH.length, Math.max(1, level)) - 1]!;
+  return { gradient, deception };
+}
+
 export function levelStructure(level: number): StructureParams {
   const row = TABLE[Math.min(TABLE.length, Math.max(1, level)) - 1]!;
   const [nodes, loopNodes, routeNodes, extraCycles, minRoutes, minJunctions, maxChain] = row;

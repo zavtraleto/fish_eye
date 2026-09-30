@@ -187,6 +187,26 @@ export const DEFAULT_TUNING = {
     HEART_HEIGHT: 24,
     /** Whole-level tries (graph + geometry) before falling back to the test level. */
     LEVEL_TRIES: 20,
+    /** Feature size of the flesh density noise, meters. */
+    FLESH_SCALE: 170,
+    /** Closing radius everywhere, meters: blunts rock wedges and corners. */
+    FLESH_CLOSE_MIN: 1.5,
+    /** Closing and opening radii where the flesh is dense, meters. */
+    FLESH_CLOSE_MAX: 3.5,
+    FLESH_OPEN: 2,
+    /** No wall moves inward more than this, meters (growths aside): a 7 m passage stays about 5 m wide. */
+    FLESH_INWARD: 1,
+    /** Wall wobble in dense flesh, meters, mostly outward. */
+    FLESH_WOBBLE: 2.5,
+    FLESH_WOBBLE_SCALE: 16,
+    /** No flesh within this distance of the white wall, meters. */
+    START_CALM: 30,
+    /** Growths appear where the density is above this… */
+    GROWTH_DENSITY: 0.55,
+    GROWTH_RADIUS_MIN: 2.5,
+    GROWTH_RADIUS_MAX: 5,
+    /** …tried this many times per space. */
+    GROWTH_TRIES: 6,
     /** Free-space raster step, meters: wall detail and floor tessellation. */
     SDF_CELL: 1,
     /** Enemy navigation raster step, meters. */

@@ -10,7 +10,7 @@ Vite + TypeScript (strict) + Three.js. Target: desktop Chrome, keyboard + mouse,
 
 ## Status
 
-Phases 1–5 done (playtest and tuning come later, on a fuller prototype): movement, vertex fisheye, the run loop on a hand-made test level (`src/sim/level/fixed.ts` → `build.ts`), one-button moveset (`src/sim/move/`, GDD §5), the enemy (`src/sim/enemy.ts`, GDD §11), rear vision (`src/render/rearVision.ts`, GDD §12). Phase 6 (level structure) is designed (GDD §6–§8, brainstorming 2026-09-30) and split into stages 6.1–6.6 in `docs/plans/2026-09-30-structure.md`. Stage 6.1 done: the raster level model (shapes → field → contour → walls, floor, zones; wall index; enemy nav field), the test level built by it. Stage 6.2 done: the structure graph (`src/sim/level/gen/`, Delaunay + loop + ears, metrics; `?map=1` debug map). Stage 6.3 done: generated levels are played (`gen/skeleton.ts` halls, galleries, throats, START box; `gen/generate.ts`); `fixed.ts` stays for tests (`levels: fixedLevels`). Stage 6.3b–c done: skeleton variety (kind field, bent passages, naves, fused halls), a net-like graph and the steep difficulty curve, chunked level mesh culled by the fog, next level prebuilt during the level-clear screen. Next: stage 6.4, flesh.
+Phases 1–5 done (playtest and tuning come later, on a fuller prototype): movement, vertex fisheye, the run loop on a hand-made test level (`src/sim/level/fixed.ts` → `build.ts`), one-button moveset (`src/sim/move/`, GDD §5), the enemy (`src/sim/enemy.ts`, GDD §11), rear vision (`src/render/rearVision.ts`, GDD §12). Phase 6 (level structure) is designed (GDD §6–§8, brainstorming 2026-09-30) and split into stages 6.1–6.6 in `docs/plans/2026-09-30-structure.md`. Stage 6.1 done: the raster level model (shapes → field → contour → walls, floor, zones; wall index; enemy nav field), the test level built by it. Stage 6.2 done: the structure graph (`src/sim/level/gen/`, Delaunay + loop + ears, metrics; `?map=1` debug map). Stage 6.3 done: generated levels are played (`gen/skeleton.ts` halls, galleries, throats, START box; `gen/generate.ts`); `fixed.ts` stays for tests (`levels: fixedLevels`). Stage 6.3b–c done: skeleton variety (kind field, bent passages, naves, fused halls), a net-like graph and the steep difficulty curve, chunked level mesh culled by the fog, next level prebuilt during the level-clear screen. Stage 6.4 done: flesh (`gen/flesh.ts`: exact distance transform, closing/opening, wobble, growths, START → heart density gradient; warm tint in the mesh). Next: stage 6.5 (honeycomb, colonnade, rotunda, niches) — or what the playtest asks.
 
 ## Language
 
@@ -48,7 +48,7 @@ Before every commit: `npm test` and `npm run build` must pass. Pushing to `main`
 
 ```
 src/sim/      pure simulation: no DOM, no Three.js — World, player, enemy, run, 2D level geometry
-src/sim/level/  level model (zones, portals, walls), raster pipeline (shapes → field → contour), wall index, nav field, queries; gen/ — structure generation (GDD §7)
+src/sim/level/  level model (zones, portals, walls), raster pipeline (shapes → field → rock islands → flesh → contour), distance transform, wall index, nav field, queries; gen/ — structure generation (GDD §7)
 src/render/   Three.js view: reads sim state, never mutates it; camera/ holds the projections
 src/core/     fixed-step loop, seeded RNG, input (keyboard, mouse / Pointer Lock)
 src/data/     content as data (difficulty table, …)

@@ -3,7 +3,7 @@ import { DEFAULT_TUNING, mergeTuning, tuning } from '../src/config/tuning';
 import { generateLevel } from '../src/sim/level/gen/generate';
 import { NavField } from '../src/sim/level/nav';
 import { crossesWall } from '../src/sim/level/query';
-import { cellAt } from '../src/sim/level/raster';
+import { cellAt, sampleNodes } from '../src/sim/level/raster';
 import { World } from '../src/sim/world';
 import { walk, wallClearance } from './helpers';
 
@@ -63,6 +63,15 @@ describe('generated levels (GDD §7, §8, §10, §11.1)', () => {
       expect(w.state, `seed ${seed} level ${n}`).toBe('LEVEL_CLEAR');
     }
   }, 60000);
+
+  it('grows flesh away from START and thickest at the heart early on (GDD §6)', () => {
+    for (let seed = 1; seed <= 3; seed++) {
+      const { level } = generateLevel(seed, 1);
+      const d = level.density!;
+      expect(sampleNodes(level.frame, d, level.spawn.x, level.spawn.z)).toBe(0);
+      expect(sampleNodes(level.frame, d, level.eye.x, level.eye.z)).toBeGreaterThan(0.6);
+    }
+  });
 
   it('is deterministic per seed and level', () => {
     const a = generateLevel(5, 3).level;
