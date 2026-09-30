@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Rng } from '../src/core/rng';
 import { delaunay, triangleEdges } from '../src/sim/level/gen/delaunay';
+import { noiseField } from '../src/sim/level/gen/noise';
 import { scatterPoints } from '../src/sim/level/gen/scatter';
 
 /** Is p strictly inside the circumcircle of a, b, c? */
@@ -49,5 +50,24 @@ describe('scatter and Delaunay (GDD §7 steps 2–3)', () => {
         });
       }
     }
+  });
+});
+
+describe('noise field (GDD §6)', () => {
+  it('is deterministic, smooth and spans [0, 1]', () => {
+    const f = noiseField(new Rng(4), 100);
+    const g = noiseField(new Rng(4), 100);
+    let lo = 1;
+    let hi = 0;
+    for (let i = 0; i < 2000; i++) {
+      const x = (i * 37.3) % 1000;
+      const z = (i * 91.7) % 1000;
+      expect(f(x, z)).toBe(g(x, z));
+      lo = Math.min(lo, f(x, z));
+      hi = Math.max(hi, f(x, z));
+      expect(Math.abs(f(x + 0.5, z) - f(x, z))).toBeLessThan(0.05);
+    }
+    expect(lo).toBeLessThan(0.15);
+    expect(hi).toBeGreaterThan(0.85);
   });
 });

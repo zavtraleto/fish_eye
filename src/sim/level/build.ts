@@ -4,8 +4,9 @@ import { contour, edgeCrossing } from './contour';
 import { closestOnSegment, segmentLength, type Point, type Rect, type Segment } from './geometry';
 import { hasEdge, type LevelGraph } from './graph';
 import type { FloorPiece, Level, ModuleKind, Portal, WallFace, Zone, ZoneRef } from './level';
-import type { NavGrid } from './nav';
-import { cellAt, cellCenter, frameAround, sampleNodes, type GridFrame } from './raster';
+import { NavField, type NavGrid } from './nav';
+import { lineOfSight } from './query';
+import { cellCenter, frameAround, sampleNodes, type GridFrame } from './raster';
 import { labelCells, sampleField, type Shape } from './shapes';
 import { SegmentIndex } from './wallIndex';
 
@@ -49,13 +50,17 @@ function union(rects: readonly Rect[]): Rect {
   };
 }
 
-/** Per zone: its centroid if it lies deep enough inside it, else its deepest cell centre. One pass over the raster. */
-function anchors(f: GridFrame, field: Float32Array, cellZone: Int16Array, count: number): Point[] {
+/**
+ * Per zone, a point deep inside and central: of the cells at least 90% as deep
+ * as the deepest, the one nearest the centroid (a bent passage's centroid can
+ * sit at its inner corner). Null for a zone with no floor. Two passes over the raster.
+ */
+function anchors(f: GridFrame, field: Float32Array, cellZone: Int16Array, count: number): (Point | null)[] {
   const sx = new Float64Array(count);
   const sz = new Float64Array(count);
   const cells = new Int32Array(count);
-  const best = new Int32Array(count).fill(-1);
-  const depth = new Float64Array(count).fill(-Infinity);
+  const depthMax = new Float64Array(count).fill(-Infinity);
+  const depth = new Float32Array(cellZone.length);
   for (let c = 0; c < cellZone.length; c++) {
     const z = cellZone[c]!;
     if (z < 0) continue;
@@ -63,19 +68,22 @@ function anchors(f: GridFrame, field: Float32Array, cellZone: Int16Array, count:
     sx[z] = sx[z]! + p.x;
     sz[z] = sz[z]! + p.z;
     cells[z] = cells[z]! + 1;
-    const d = sampleNodes(f, field, p.x, p.z);
-    if (d > depth[z]!) {
-      depth[z] = d;
+    depth[c] = sampleNodes(f, field, p.x, p.z);
+    depthMax[z] = Math.max(depthMax[z]!, depth[c]!);
+  }
+  const best = new Int32Array(count).fill(-1);
+  const bestDist = new Float64Array(count).fill(Infinity);
+  for (let c = 0; c < cellZone.length; c++) {
+    const z = cellZone[c]!;
+    if (z < 0 || depth[c]! < depthMax[z]! * 0.9) continue;
+    const p = cellCenter(f, c);
+    const d = Math.hypot(p.x - sx[z]! / cells[z]!, p.z - sz[z]! / cells[z]!);
+    if (d < bestDist[z]!) {
+      bestDist[z] = d;
       best[z] = c;
     }
   }
-  return Array.from({ length: count }, (_, z) => {
-    if (!cells[z]) throw new Error(`zone ${z} has no floor`);
-    const centroid = { x: sx[z]! / cells[z]!, z: sz[z]! / cells[z]! };
-    const cc = cellAt(f, centroid.x, centroid.z);
-    if (cc >= 0 && cellZone[cc] === z && sampleNodes(f, field, centroid.x, centroid.z) >= depth[z]! / 2) return centroid;
-    return cellCenter(f, best[z]!);
-  });
+  return Array.from({ length: count }, (_, z) => (cells[z] ? cellCenter(f, best[z]!) : null));
 }
 
 /** Open part of the grid edge between two nodes, or null if it is rock. */
@@ -92,6 +100,34 @@ function openSpan(f: GridFrame, field: Float32Array, ia: number, ja: number, ib:
 }
 
 const dist = (p: Point, q: Point) => Math.hypot(p.x - q.x, p.z - q.z);
+
+/** Keeps the green line this far from walls where it has to bend, meters. */
+const ROUTE_CLEARANCE = 1.5;
+
+/**
+ * Points after `from` up to `to`: just `to` if the way is clear, else a path
+ * over the nav raster pulled taut (each step to the farthest visible cell).
+ */
+function detour(nav: NavGrid, walls: SegmentIndex, from: Point, to: Point): Point[] {
+  if (lineOfSight(walls, from, to, 0.5)) return [to];
+  const field = new NavField(nav);
+  field.build(to.x, to.z, from.x, from.z, ROUTE_CLEARANCE);
+  const cells = field.descend(from.x, from.z, Infinity).map((c) => cellCenter(nav.frame, c));
+  if (!cells.length) throw new Error('the green line finds no way');
+  const out: Point[] = [];
+  let at = from;
+  let i = 0;
+  while (i < cells.length) {
+    let j = cells.length - 1;
+    while (j > i && !lineOfSight(walls, at, cells[j]!, 0.5)) j--;
+    at = cells[j]!;
+    out.push(at);
+    i = j + 1;
+    if (lineOfSight(walls, at, to, 0.5)) break;
+  }
+  out.push(to);
+  return out;
+}
 
 function onSegment(s: Segment, p: Point): boolean {
   return dist(closestOnSegment(s, p.x, p.z), p) < 1e-4;
@@ -132,8 +168,25 @@ export function buildLevel(def: LevelDef): Level {
     if (o < 0) throw new Error(`open cell ${p.cell} outside every shape`);
     cellZone[p.cell] = shapeZone[o]!;
   }
+  // A passage the halls swallow whole leaves no floor: its halls open to each other directly.
   const anchorPoints = anchors(frame, field, cellZone, zoneDefs.length);
-  const zones: Zone[] = zoneDefs.map((s, id) => ({ id, ref: s.ref, module: s.module, height: s.height, anchor: anchorPoints[id]! }));
+  zoneDefs.forEach((s, id) => {
+    if (!anchorPoints[id] && s.ref.kind === 'node') throw new Error(`space ${s.ref.node} has no floor`);
+  });
+  // Drop them and renumber the rest.
+  const renumber = new Int16Array(zoneDefs.length).fill(-1);
+  const zones: Zone[] = [];
+  zoneDefs.forEach((s, old) => {
+    const anchor = anchorPoints[old];
+    if (!anchor) return;
+    renumber[old] = zones.length;
+    zones.push({ id: zones.length, ref: s.ref, module: s.module, height: s.height, anchor });
+  });
+  for (let c = 0; c < cellZone.length; c++) if (cellZone[c]! >= 0) cellZone[c] = renumber[cellZone[c]!]!;
+  for (const [k, old] of zoneByKey) {
+    if (renumber[old]! >= 0) zoneByKey.set(k, renumber[old]!);
+    else zoneByKey.delete(k);
+  }
 
   // Walls and the white wall.
   const walls: Segment[] = [];
@@ -198,16 +251,39 @@ export function buildLevel(def: LevelDef): Level {
     const ok = ra.kind === 'node' && rb.kind === 'node' ? hasEdge(graph, ra.node, rb.node) : ends(ra).some((n) => ends(rb).includes(n));
     if (!ok) throw new Error(`zones ${refKey(ra)} and ${refKey(rb)} meet, but the graph has no such passage`);
   }
-  const portal = (a: number, b: number): Portal | undefined => portals.find((p) => (p.a === a && p.b === b) || (p.a === b && p.b === a));
 
   // Every graph edge must open: room–corridor–room, or room–room directly.
+  /**
+   * The portals from space u to space v: fewest hops through u, v and the
+   * passages that leave either — a passage's mouth may be taken by a
+   * neighbouring passage of the same hall.
+   */
   const hops = (u: number, v: number): Portal[] => {
-    const e = zoneByKey.get(refKey({ kind: 'edge', a: u, b: v }));
     const zu = nodeZone(u);
     const zv = nodeZone(v);
-    const list = e === undefined ? [portal(zu, zv)] : [portal(zu, e), portal(e, zv)];
-    if (list.some((p) => !p)) throw new Error(`graph edge ${u}-${v} has no opening`);
-    return list as Portal[];
+    const allowed = (z: number) => {
+      const r = zones[z]!.ref;
+      return z === zu || z === zv || (r.kind === 'edge' && (r.a === u || r.b === u || r.a === v || r.b === v));
+    };
+    const via = new Map<number, Portal | null>([[zu, null]]);
+    const queue = [zu];
+    for (let h = 0; h < queue.length && !via.has(zv); h++) {
+      const z = queue[h]!;
+      for (const p of portals) {
+        const next = p.a === z ? p.b : p.b === z ? p.a : -1;
+        if (next < 0 || via.has(next) || !allowed(next)) continue;
+        via.set(next, p);
+        queue.push(next);
+      }
+    }
+    if (!via.has(zv)) throw new Error(`graph edge ${u}-${v} has no opening`);
+    const out: Portal[] = [];
+    for (let z = zv; z !== zu; ) {
+      const p = via.get(z)!;
+      out.unshift(p);
+      z = p.a === z ? p.b : p.a;
+    }
+    return out;
   };
   for (const e of graph.edges) hops(e.a, e.b);
 
@@ -218,13 +294,26 @@ export function buildLevel(def: LevelDef): Level {
     }
   }
 
-  // Route: START anchor → portals → anchors → … → EYE (GDD §10).
-  if (graph.route[0] !== graph.start || graph.route.at(-1) !== graph.eye) throw new Error('route must run START → EYE');
-  const route: Point[] = [zones[startZone]!.anchor];
-  for (let i = 0; i + 1 < graph.route.length; i++) {
-    for (const p of hops(graph.route[i]!, graph.route[i + 1]!)) route.push(p.mid);
-    route.push(zones[nodeZone(graph.route[i + 1]!)]!.anchor);
+  const wallIndex = new SegmentIndex(walls);
+  const navFrame = frameAround(b.x0, b.z0, b.x1, b.z1, tuning.gen.NAV_CELL, MARGIN);
+  const clearance = new Float32Array(navFrame.w * navFrame.h);
+  for (let c = 0; c < clearance.length; c++) {
+    const p = cellCenter(navFrame, c);
+    if (sampleNodes(frame, field, p.x, p.z) > 0) clearance[c] = wallIndex.distance(p.x, p.z, CLEARANCE_MAX);
   }
+  const nav: NavGrid = { frame: navFrame, clearance };
+
+  // Route: START anchor → portals → anchors → … → EYE (GDD §10); where two
+  // stops do not see each other (a bend), the line follows the nav raster.
+  if (graph.route[0] !== graph.start || graph.route.at(-1) !== graph.eye) throw new Error('route must run START → EYE');
+  const stops: Point[] = [zones[startZone]!.anchor];
+  for (let i = 0; i + 1 < graph.route.length; i++) {
+    for (const p of hops(graph.route[i]!, graph.route[i + 1]!)) stops.push(p.mid);
+    stops.push(zones[nodeZone(graph.route[i + 1]!)]!.anchor);
+  }
+  const route: Point[] = [stops[0]!];
+  for (let i = 1; i < stops.length; i++) route.push(...detour(nav, wallIndex, route[route.length - 1]!, stops[i]!));
+  for (let i = 0; i + 1 < route.length; i++) if (!lineOfSight(wallIndex, route[i]!, route[i + 1]!)) throw new Error('the green line crosses a wall');
 
   // Spawn: SPAWN_DISTANCE off the white wall's middle, on the open side.
   const w = def.startWall;
@@ -242,14 +331,6 @@ export function buildLevel(def: LevelDef): Level {
   const sz = mz + nz * d;
   const next = route[1] ?? route[0]!;
 
-  const wallIndex = new SegmentIndex(walls);
-  const navFrame = frameAround(b.x0, b.z0, b.x1, b.z1, tuning.gen.NAV_CELL, MARGIN);
-  const clearance = new Float32Array(navFrame.w * navFrame.h);
-  for (let c = 0; c < clearance.length; c++) {
-    const p = cellCenter(navFrame, c);
-    if (sampleNodes(frame, field, p.x, p.z) > 0) clearance[c] = wallIndex.distance(p.x, p.z, CLEARANCE_MAX);
-  }
-  const nav: NavGrid = { frame: navFrame, clearance };
   const floor: FloorPiece[] = pieces.map((p) => ({ points: p.points, zone: cellZone[p.cell]! }));
 
   return {

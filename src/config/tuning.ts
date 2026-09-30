@@ -108,8 +108,10 @@ export const DEFAULT_TUNING = {
   /** GDD §7: level generation. */
   gen: {
     /** Spacing of the structure's anchor points drawn per point, meters (Poisson). */
-    POINT_SPACING_MIN: 35,
-    POINT_SPACING_MAX: 70,
+    POINT_SPACING_MIN: 30,
+    POINT_SPACING_MAX: 85,
+    /** Feature size of the spacing field, meters: districts of small chambers and of giants. */
+    SPACING_SCALE: 220,
     /** Longer Delaunay edges are dropped: a gallery that long would pass other spaces. */
     EDGE_MAX: 110,
     /** Two edges of a node closer than this, degrees: the longer one is dropped. */
@@ -123,8 +125,10 @@ export const DEFAULT_TUNING = {
     /** Failed tries before the targets are relaxed one step. */
     GEN_MAX_ATTEMPTS: 200,
     /** Hall size as a share of the distance to the nearest space (GDD §6: balance of halls and galleries). */
-    HALL_SIZE_MIN: 0.35,
-    HALL_SIZE_MAX: 0.45,
+    HALL_SIZE_MIN: 0.4,
+    HALL_SIZE_MAX: 0.55,
+    /** …but a hall keeps within this share of the distance to a space it does not open to. */
+    HALL_CLEARANCE: 0.42,
     /** The heart is a bigger hall. */
     HEART_SIZE: 0.5,
     /** Corners of a hall polygon. */
@@ -136,6 +140,35 @@ export const DEFAULT_TUNING = {
     THROAT_WIDTH_MAX: 6,
     /** Share of passages that are throats; never a bridge, so always avoidable. */
     THROAT_CHANCE: 0.2,
+    /** Share of passages that are naves: huge galleries. */
+    NAVE_CHANCE: 0.12,
+    NAVE_WIDTH_MIN: 16,
+    NAVE_WIDTH_MAX: 24,
+    /** Each leg of a passage is this much wider or narrower than its base width, at most. */
+    WIDTH_VARIATION: 0.3,
+    /** Narrowest passage anywhere, meters: room for the enemy and a dodge. */
+    MIN_CLEARANCE: 5,
+    /** Share of passages that run straight; the rest bend. */
+    STRAIGHT_CHANCE: 0.25,
+    /** A flesh-kin bend pushes sideways by this share of the passage length. */
+    BEND_MIN: 0.12,
+    BEND_MAX: 0.3,
+    /** Shortest leg of a machine L or Z, meters. */
+    MIN_LEG: 8,
+    /** Halls closer than this gap, meters, may fuse through a wide mouth… */
+    FUSE_GAP: 14,
+    /** …with this chance. */
+    FUSE_CHANCE: 0.3,
+    /** Feature size of the "kind" field, meters: machine districts vs flesh-kin ones (GDD §6). */
+    KIND_SCALE: 260,
+    /** Feature size of the machine grid orientation field, meters. */
+    GRID_SCALE: 320,
+    /** Machine grid orientations are multiples of this, degrees. */
+    GRID_SNAP: 15,
+    /** Share of machine halls that are a cross, T or L of two rectangles. */
+    CROSS_CHANCE: 0.45,
+    /** Share of flesh-kin halls that are a clump of two or three polygons. */
+    CLUMP_CHANCE: 0.5,
     /** The START box: width along the white wall, depth away from it. */
     START_WIDTH: 20,
     START_DEPTH: 18,

@@ -3,29 +3,21 @@ import type { Rng } from '../../../core/rng';
 import type { LevelDef, ShapeDef } from '../build';
 import type { Point, Segment } from '../geometry';
 import type { LevelGraph } from '../graph';
+import type { ModuleKind, ZoneRef } from '../level';
 import { polygonShape, stripShape } from '../shapes';
+import { noiseField, type Field } from './noise';
 import type { StructureGraph } from './structure';
 
-// Structure graph → skeleton shapes (GDD §6, §7 step 7): each space a convex
-// hall with no right angles, START a machine box whose white wall faces the
-// widest empty sector, each passage a straight gallery or a throat from
-// centre to centre. Flesh (stage 6.4) deforms this later.
+// Structure graph → skeleton shapes (GDD §6, §7 step 7). A "kind" field over
+// the plan decides the local language: machine — right angles snapped to a
+// local grid orientation, rectangles and crosses, orthogonal L/Z passages;
+// flesh-kin — free convex halls or clumps of them, passages that wander.
+// Passages vary in width along their legs, from throats to naves; some halls
+// fuse through a wide opening instead of a gallery. START is a machine box
+// whose white wall faces the widest empty sector. Flesh (stage 6.4) deforms this.
 
 const range = (rng: Rng, lo: number, hi: number) => lo + rng.next() * (hi - lo);
-
-/** A convex polygon of irregular corners around c, radius about r. */
-function hallPolygon(rng: Rng, c: Point, r: number): Point[] {
-  const g = tuning.gen;
-  const n = rng.int(g.HALL_CORNERS_MIN, g.HALL_CORNERS_MAX);
-  const step = (2 * Math.PI) / n;
-  const turn = rng.next() * step;
-  const pts = Array.from({ length: n }, (_, i) => {
-    const a = turn + i * step + (rng.next() - 0.5) * step * 0.7;
-    const d = r * range(rng, 0.8, 1.1);
-    return { x: c.x + Math.cos(a) * d, z: c.z + Math.sin(a) * d };
-  });
-  return convexHull(pts);
-}
+const dist = (a: Point, b: Point) => Math.hypot(b.x - a.x, b.z - a.z);
 
 /** Andrew's monotone chain. */
 function convexHull(pts: Point[]): Point[] {
@@ -41,6 +33,54 @@ function convexHull(pts: Point[]): Point[] {
     return out;
   };
   return [...half(p), ...half([...p].reverse())];
+}
+
+/** A convex polygon of irregular corners around c, radius about r. */
+function blob(rng: Rng, c: Point, r: number): Point[] {
+  const g = tuning.gen;
+  const n = rng.int(g.HALL_CORNERS_MIN, g.HALL_CORNERS_MAX);
+  const step = (2 * Math.PI) / n;
+  const turn = rng.next() * step;
+  return convexHull(
+    Array.from({ length: n }, (_, i) => {
+      const a = turn + i * step + (rng.next() - 0.5) * step * 0.7;
+      const d = r * range(rng, 0.8, 1.1);
+      return { x: c.x + Math.cos(a) * d, z: c.z + Math.sin(a) * d };
+    }),
+  );
+}
+
+/** A rectangle centred on c, half-sizes hu along angle th and hv across. */
+function rect(c: Point, th: number, hu: number, hv: number): Point[] {
+  const ux = Math.cos(th);
+  const uz = Math.sin(th);
+  const at = (u: number, v: number) => ({ x: c.x + ux * u - uz * v, z: c.z + uz * u + ux * v });
+  return [at(hu, -hv), at(hu, hv), at(-hu, hv), at(-hu, -hv)];
+}
+
+/** Machine hall: a rectangle whose diagonal is r, or a cross / L of two such (GDD §6: right angles). */
+function machineHall(rng: Rng, c: Point, r: number, th: number): Point[][] {
+  const phi = range(rng, 0.45, 0.78);
+  const a = rect(c, th, r * Math.cos(phi), r * Math.sin(phi));
+  if (rng.next() >= tuning.gen.CROSS_CHANCE) return [a];
+  // A second arm across the first, shifted along it: a cross, a T or an L.
+  const phi2 = range(rng, 0.25, 0.5);
+  const shift = (rng.next() - 0.5) * r * 0.6;
+  const c2 = { x: c.x + Math.cos(th) * shift, z: c.z + Math.sin(th) * shift };
+  return [a, rect(c2, th + Math.PI / 2, r * Math.cos(phi2), r * Math.sin(phi2))];
+}
+
+/** Flesh-kin hall: one free convex polygon, or a clump of two or three (GDD §6: asymmetry). */
+function organicHall(rng: Rng, c: Point, r: number): Point[][] {
+  if (rng.next() >= tuning.gen.CLUMP_CHANCE) return [blob(rng, c, r)];
+  const parts = [blob(rng, c, r * 0.8)];
+  const extra = rng.int(1, 2);
+  for (let i = 0; i < extra; i++) {
+    const a = rng.next() * Math.PI * 2;
+    const d = r * range(rng, 0.25, 0.45);
+    parts.push(blob(rng, { x: c.x + Math.cos(a) * d, z: c.z + Math.sin(a) * d }, r * range(rng, 0.45, 0.65)));
+  }
+  return parts;
 }
 
 /** Direction (radians) in the middle of the widest gap between the given directions. */
@@ -62,17 +102,84 @@ function widestGap(angles: number[]): number {
 /** The START box: its back side is the white wall (GDD §10), facing away from every passage. */
 function startBox(c: Point, back: number): { pts: Point[]; wall: Segment } {
   const g = tuning.gen;
-  const w = Math.max(g.START_WIDTH, g.START_WALL_MIN + 2 * g.SDF_CELL) / 2;
-  const d = g.START_DEPTH / 2;
-  const nx = Math.cos(back);
-  const nz = Math.sin(back);
-  const at = (u: number, v: number) => ({ x: c.x + nx * u - nz * v, z: c.z + nz * u + nx * v });
-  const pts = [at(d, -w), at(d, w), at(-d, w), at(-d, -w)];
+  const w = Math.max(g.START_WIDTH, g.START_WALL_MIN + 4 * g.SDF_CELL) / 2;
+  const pts = rect(c, back, g.START_DEPTH / 2, w);
   return { pts, wall: { ax: pts[0]!.x, az: pts[0]!.z, bx: pts[1]!.x, bz: pts[1]!.z } };
+}
+
+/** Machine passage a → b: straight if nearly on the local grid, else an L or a Z along it. */
+function machinePath(rng: Rng, a: Point, b: Point, th: number): Point[] {
+  const dx = b.x - a.x;
+  const dz = b.z - a.z;
+  const ux = Math.cos(th);
+  const uz = Math.sin(th);
+  let du = dx * ux + dz * uz;
+  let dv = -dx * uz + dz * ux;
+  // Along the grid axis closer to the passage first.
+  let [ax, az] = [ux, uz];
+  let [bx, bz] = [-uz, ux];
+  if (Math.abs(dv) > Math.abs(du)) {
+    [du, dv] = [dv, du];
+    [ax, az, bx, bz] = [bx, bz, ax, az];
+  }
+  const leg = tuning.gen.MIN_LEG;
+  if (Math.abs(dv) < leg) return [a, b];
+  if (rng.next() < 0.5 || Math.abs(du) < 2 * leg) {
+    const c = { x: a.x + ax * du, z: a.z + az * du };
+    return [a, c, b];
+  }
+  const t = range(rng, 0.3, 0.7);
+  const c1 = { x: a.x + ax * du * t, z: a.z + az * du * t };
+  return [a, c1, { x: c1.x + bx * dv, z: c1.z + bz * dv }, b];
+}
+
+/** Flesh-kin passage a → b: one or two bends pushed sideways, at free angles. */
+function organicPath(rng: Rng, a: Point, b: Point): Point[] {
+  const len = dist(a, b);
+  const nx = -(b.z - a.z) / len;
+  const nz = (b.x - a.x) / len;
+  const bends = rng.int(1, 2);
+  const out = [a];
+  let side = rng.next() < 0.5 ? -1 : 1;
+  for (let i = 1; i <= bends; i++) {
+    const t = i / (bends + 1) + (rng.next() - 0.5) * 0.15;
+    const off = side * len * range(rng, tuning.gen.BEND_MIN, tuning.gen.BEND_MAX);
+    out.push({ x: a.x + (b.x - a.x) * t + nx * off, z: a.z + (b.z - a.z) * t + nz * off });
+    side = -side;
+  }
+  out.push(b);
+  return out;
+}
+
+/** Distance from p to the polyline. */
+function toPath(path: readonly Point[], p: Point): number {
+  let best = Infinity;
+  for (let i = 0; i + 1 < path.length; i++) {
+    const a = path[i]!;
+    const b = path[i + 1]!;
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const len2 = dx * dx + dz * dz;
+    const t = len2 > 0 ? Math.min(1, Math.max(0, ((p.x - a.x) * dx + (p.z - a.z) * dz) / len2)) : 0;
+    best = Math.min(best, Math.hypot(p.x - a.x - dx * t, p.z - a.z - dz * t));
+  }
+  return best;
+}
+
+/** A regular polygon around c: the joint at a bend, so legs of different widths meet cleanly. */
+function joint(c: Point, r: number, th: number, square: boolean): Point[] {
+  if (square) return rect(c, th, r, r);
+  return Array.from({ length: 8 }, (_, i) => ({ x: c.x + Math.cos(th + (i * Math.PI) / 4) * r, z: c.z + Math.sin(th + (i * Math.PI) / 4) * r }));
 }
 
 export function skeletonDef(rng: Rng, s: StructureGraph): LevelDef {
   const g = tuning.gen;
+  const kind: Field = noiseField(rng, g.KIND_SCALE);
+  const grid: Field = noiseField(rng, g.GRID_SCALE);
+  /** Local grid orientation of machine parts: whole districts share it, districts differ. */
+  const snap = (p: Point) => Math.round((grid(p.x, p.z) * Math.PI) / ((g.GRID_SNAP * Math.PI) / 180)) * ((g.GRID_SNAP * Math.PI) / 180);
+  const machine = (p: Point) => kind(p.x, p.z) < 0.5;
+
   const pos = (id: number) => s.points[id]!;
   const graph: LevelGraph = {
     rooms: s.nodes.map((id) => ({ id, x: pos(id).x, z: pos(id).z })),
@@ -81,38 +188,100 @@ export function skeletonDef(rng: Rng, s: StructureGraph): LevelDef {
     eye: s.heart,
     route: s.route,
   };
+  const adjacent = (a: number, b: number) => s.edges.some((e) => (e.a === a && e.b === b) || (e.a === b && e.b === a));
   const shapes: ShapeDef[] = [];
+  const push = (pts: Point[], ref: ZoneRef, module: ModuleKind, height: number) => shapes.push({ shape: polygonShape(pts), ref, module, height });
   let startWall: Segment | null = null;
+  /** Where START's passages leave: the front of its box, so none grazes the white wall behind. */
+  let startMouth: Point | null = null;
 
+  // Hall radius: a share of the nearest space, kept clear of spaces it does not open to.
+  const radius = new Map<number, number>();
   for (const id of s.nodes) {
     const c = pos(id);
     let nearest = Infinity;
-    for (const o of s.nodes) if (o !== id) nearest = Math.min(nearest, Math.hypot(pos(o).x - c.x, pos(o).z - c.z));
+    let nearestOther = Infinity;
+    for (const o of s.nodes) {
+      if (o === id) continue;
+      const d = dist(c, pos(o));
+      nearest = Math.min(nearest, d);
+      if (!adjacent(id, o)) nearestOther = Math.min(nearestOther, d);
+    }
+    const share = id === s.heart ? g.HEART_SIZE : range(rng, g.HALL_SIZE_MIN, g.HALL_SIZE_MAX);
+    radius.set(id, Math.min(share * nearest, g.HALL_CLEARANCE * nearestOther));
+  }
+  // START is a fixed box; no hall may reach its white wall.
+  const startReach = Math.hypot(g.START_DEPTH / 2, Math.max(g.START_WIDTH, g.START_WALL_MIN + 4 * g.SDF_CELL) / 2);
+  radius.set(s.start, startReach);
+  for (const id of s.nodes) {
+    if (id !== s.start) radius.set(id, Math.min(radius.get(id)!, dist(pos(id), pos(s.start)) - startReach - 3));
+  }
+
+  for (const id of s.nodes) {
+    const c = pos(id);
+    const r = radius.get(id)!;
+    const ref: ZoneRef = { kind: 'node', node: id };
     if (id === s.start) {
       const dirs = s.edges.filter((e) => e.a === id || e.b === id).map((e) => {
         const o = pos(e.a === id ? e.b : e.a);
         return Math.atan2(o.z - c.z, o.x - c.x);
       });
-      const box = startBox(c, widestGap(dirs));
+      const back = widestGap(dirs);
+      const box = startBox(c, back);
       startWall = box.wall;
-      shapes.push({ shape: polygonShape(box.pts), ref: { kind: 'node', node: id }, module: 'start', height: g.START_HEIGHT });
-    } else if (id === s.heart) {
-      shapes.push({ shape: polygonShape(hallPolygon(rng, c, nearest * g.HEART_SIZE)), ref: { kind: 'node', node: id }, module: 'heart', height: g.HEART_HEIGHT });
-    } else {
-      const r = nearest * range(rng, g.HALL_SIZE_MIN, g.HALL_SIZE_MAX);
-      shapes.push({ shape: polygonShape(hallPolygon(rng, c, r)), ref: { kind: 'node', node: id }, module: 'hall', height: range(rng, g.HALL_HEIGHT_MIN, g.HALL_HEIGHT_MAX) });
+      const f = g.START_DEPTH / 2 - 3;
+      startMouth = { x: c.x - Math.cos(back) * f, z: c.z - Math.sin(back) * f };
+      push(box.pts, ref, 'start', g.START_HEIGHT);
+      continue;
     }
+    const height = id === s.heart ? g.HEART_HEIGHT : range(rng, g.HALL_HEIGHT_MIN, g.HALL_HEIGHT_MAX);
+    const parts = id !== s.heart && machine(c) ? machineHall(rng, c, r, snap(c)) : organicHall(rng, c, r);
+    for (const p of parts) push(p, ref, id === s.heart ? 'heart' : 'hall', height);
   }
 
+  const end = (id: number) => (id === s.start && startMouth ? startMouth : pos(id));
   for (const e of s.edges) {
-    const throat = rng.next() < g.THROAT_CHANCE;
-    const width = throat ? range(rng, g.THROAT_WIDTH_MIN, g.THROAT_WIDTH_MAX) : range(rng, g.GALLERY_WIDTH_MIN, g.GALLERY_WIDTH_MAX);
-    shapes.push({
-      shape: stripShape(pos(e.a), pos(e.b), width),
-      ref: { kind: 'edge', a: e.a, b: e.b },
-      module: throat ? 'throat' : 'gallery',
-      height: throat ? g.THROAT_HEIGHT : range(rng, g.GALLERY_HEIGHT_MIN, g.GALLERY_HEIGHT_MAX),
-    });
+    const a = end(e.a);
+    const b = end(e.b);
+    const ref: ZoneRef = { kind: 'edge', a: e.a, b: e.b };
+    const mid = { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 };
+    const gap = dist(a, b) - radius.get(e.a)! - radius.get(e.b)!;
+    // Close halls sometimes fuse through a wide mouth instead of a gallery.
+    if (e.a !== s.start && e.b !== s.start && gap < g.FUSE_GAP && rng.next() < g.FUSE_CHANCE) {
+      const w = 1.4 * Math.min(radius.get(e.a)!, radius.get(e.b)!);
+      shapes.push({ shape: stripShape(a, b, w), ref, module: 'hall', height: range(rng, g.HALL_HEIGHT_MIN, g.HALL_HEIGHT_MAX) });
+      continue;
+    }
+    const roll = rng.next();
+    const throat = roll < g.THROAT_CHANCE;
+    const nave = !throat && roll < g.THROAT_CHANCE + g.NAVE_CHANCE;
+    const [lo, hi] = throat ? [g.THROAT_WIDTH_MIN, g.THROAT_WIDTH_MAX] : nave ? [g.NAVE_WIDTH_MIN, g.NAVE_WIDTH_MAX] : [g.GALLERY_WIDTH_MIN, g.GALLERY_WIDTH_MAX];
+    const width = range(rng, lo, hi);
+    const height = throat ? g.THROAT_HEIGHT : range(rng, g.GALLERY_HEIGHT_MIN, g.GALLERY_HEIGHT_MAX) * (nave ? 1.6 : 1);
+    const module: ModuleKind = throat ? 'throat' : 'gallery';
+    const square = machine(mid);
+    const th = snap(mid);
+    // A bend must keep clear of every other space; else another bend, else straight.
+    // START's passages run straight: a bend could cut through the white wall.
+    const clear = (path: Point[]) =>
+      s.nodes.every((n) => n === e.a || n === e.b || toPath(path, pos(n)) > radius.get(n)! * 1.2 + (width * (1 + g.WIDTH_VARIATION)) / 2 + 2);
+    let path = [a, b];
+    if (e.a !== s.start && e.b !== s.start && rng.next() >= g.STRAIGHT_CHANCE) {
+      for (let k = 0; k < 3; k++) {
+        const bent = square ? machinePath(rng, a, b, th) : organicPath(rng, a, b);
+        if (clear(bent)) {
+          path = bent;
+          break;
+        }
+      }
+    }
+    // Each leg its own width: passages swell and narrow, never below MIN_CLEARANCE.
+    const widths = path.slice(1).map(() => Math.max(g.MIN_CLEARANCE, width * range(rng, 1 - g.WIDTH_VARIATION, 1 + g.WIDTH_VARIATION)));
+    for (let i = 0; i + 1 < path.length; i++) shapes.push({ shape: stripShape(path[i]!, path[i + 1]!, widths[i]!), ref, module, height });
+    for (let i = 1; i + 1 < path.length; i++) {
+      const legDir = Math.atan2(path[i + 1]!.z - path[i]!.z, path[i + 1]!.x - path[i]!.x);
+      push(joint(path[i]!, Math.max(widths[i - 1]!, widths[i]!) / 2, legDir, square), ref, module, height);
+    }
   }
 
   if (!startWall) throw new Error('structure has no START');

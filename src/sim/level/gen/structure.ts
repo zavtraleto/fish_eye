@@ -4,6 +4,7 @@ import type { StructureParams } from '../../../data/difficulty';
 import type { Point } from '../geometry';
 import { delaunay, triangleEdges, type Edge, type Triangle } from './delaunay';
 import { adjacency, distances, measure, type GraphMetrics } from './metrics';
+import { noiseField } from './noise';
 import { scatterPoints } from './scatter';
 
 // The structure graph (GDD §6, §7 steps 2–5): irregular anchor points, their
@@ -169,7 +170,8 @@ function detour(rng: Rng, d: Draft, cand: Map<number, number[]>, a: number, k: n
 /** One try with fresh points; null if the targets are not met. */
 function attempt(rng: Rng, p: StructureParams): Omit<StructureGraph, 'relaxed' | 'attempts'> | null {
   const g = tuning.gen;
-  const points = scatterPoints(rng, Math.min(90, p.nodes * 3 + 6), g.POINT_SPACING_MIN, g.POINT_SPACING_MAX);
+  const spacing = noiseField(rng, g.SPACING_SCALE);
+  const points = scatterPoints(rng, Math.min(90, p.nodes * 3 + 6), g.POINT_SPACING_MIN, g.POINT_SPACING_MAX, spacing);
   const tris = delaunay(points);
   const candidates = filterEdges(points, tris);
   const allowed = new Set(candidates.map((e) => key(e.a, e.b)));
