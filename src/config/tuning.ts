@@ -134,10 +134,10 @@ export const DEFAULT_TUNING = {
     /** Corners of a hall polygon. */
     HALL_CORNERS_MIN: 5,
     HALL_CORNERS_MAX: 8,
-    GALLERY_WIDTH_MIN: 10,
+    GALLERY_WIDTH_MIN: 11,
     GALLERY_WIDTH_MAX: 18,
-    THROAT_WIDTH_MIN: 7,
-    THROAT_WIDTH_MAX: 8,
+    THROAT_WIDTH_MIN: 9,
+    THROAT_WIDTH_MAX: 10,
     /** Share of passages that are throats; never a bridge, so always avoidable. */
     THROAT_CHANCE: 0.2,
     /** Share of passages that are naves: huge galleries. */
@@ -147,7 +147,7 @@ export const DEFAULT_TUNING = {
     /** Each leg of a passage is this much wider or narrower than its base width, at most. */
     WIDTH_VARIATION: 0.3,
     /** Narrowest passage anywhere, meters: room to dodge more than one enemy. */
-    MIN_CLEARANCE: 7,
+    MIN_CLEARANCE: 9,
     /** Rock islands smaller than this, m², or thinner than ROCK_MIN_THICKNESS, m, are opened: no thin columns. */
     ROCK_MIN_AREA: 80,
     ROCK_MIN_THICKNESS: 4,
@@ -215,8 +215,8 @@ export const DEFAULT_TUNING = {
     /** Closing and opening radii where the flesh is dense, meters. */
     FLESH_CLOSE_MAX: 3.5,
     FLESH_OPEN: 2,
-    /** No wall moves inward more than this, meters (growths aside): a 7 m passage stays about 5 m wide. */
-    FLESH_INWARD: 1,
+    /** No wall moves inward more than this, meters (growths aside): a 9 m passage stays about 8 m wide. */
+    FLESH_INWARD: 0.5,
     /** Wall wobble in dense flesh, meters, mostly outward. */
     FLESH_WOBBLE: 2.5,
     FLESH_WOBBLE_SCALE: 16,

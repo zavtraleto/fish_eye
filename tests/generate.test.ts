@@ -64,6 +64,17 @@ describe('generated levels (GDD §7, §8, §10, §11.1)', () => {
     }
   }, 60000);
 
+  it('takes at least ~10 s of running to the EYE from level 1 (GDD §13)', () => {
+    for (let seed = 1; seed <= 6; seed++) {
+      for (const n of [1, 2]) {
+        const r = generateLevel(seed, n).level.route;
+        let len = 0;
+        for (let i = 0; i + 1 < r.length; i++) len += Math.hypot(r[i + 1]!.x - r[i]!.x, r[i + 1]!.z - r[i]!.z);
+        expect(len / tuning.player.MOVE_SPEED, `seed ${seed} level ${n}`).toBeGreaterThanOrEqual(10);
+      }
+    }
+  });
+
   it('grows flesh away from START and thickest at the heart early on (GDD §6)', () => {
     for (let seed = 1; seed <= 3; seed++) {
       const { level } = generateLevel(seed, 1);

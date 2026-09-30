@@ -8,8 +8,8 @@ import { patchMaterial } from './camera/fisheyeShader';
 import { GeometryBuilder, cuts } from './levelMesh';
 
 // EYE, the green line (GDD §10) and the enemy (GDD §11), VISUAL.md §2. The EYE
-// and the line never fade in fog and vanish the moment the EYE is taken; the
-// enemy fades over the long signal fog range.
+// and the enemy fade over the long signal fog range, the line with the world's
+// fog; both vanish the moment the EYE is taken.
 
 const GREEN = 0x39ff6a;
 const RED = 0xff2a2a;
@@ -60,14 +60,14 @@ function buildRouteGeometry(route: readonly Point[], width: number, lift: number
 
 function buildEye(): THREE.Group {
   const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.SphereGeometry(0.5, 24, 16), worldMaterial({ color: 0x1a2a1f }));
-  const iris = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.05, 8, 32), worldMaterial({ color: GREEN }));
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.5, 24, 16), worldMaterial({ color: 0x1a2a1f, fog: true }, true));
+  const iris = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.05, 8, 32), worldMaterial({ color: GREEN, fog: true }, true));
   iris.position.z = 0.46;
-  const pupil = new THREE.Mesh(new THREE.CircleGeometry(0.16, 24), worldMaterial({ color: 0x000000 }));
+  const pupil = new THREE.Mesh(new THREE.CircleGeometry(0.16, 24), worldMaterial({ color: 0x000000, fog: true }, true));
   pupil.position.z = 0.49;
   const glow = new THREE.Mesh(
     new THREE.SphereGeometry(0.75, 16, 12),
-    worldMaterial({ color: GREEN, transparent: true, opacity: 0.12, depthWrite: false }),
+    worldMaterial({ color: GREEN, transparent: true, opacity: 0.12, depthWrite: false, fog: true }, true),
   );
   g.add(body, iris, pupil, glow);
   g.traverse((o) => (o.frustumCulled = false));
@@ -96,7 +96,7 @@ export class Actors {
   private key: { level: Level; width: number; lift: number; segment: number } | null = null;
 
   constructor() {
-    this.route = new THREE.Mesh(new THREE.BufferGeometry(), worldMaterial({ vertexColors: true, side: THREE.DoubleSide }));
+    this.route = new THREE.Mesh(new THREE.BufferGeometry(), worldMaterial({ vertexColors: true, side: THREE.DoubleSide, fog: true }));
     this.route.frustumCulled = false;
     this.root.add(this.eye, this.route, this.enemy);
   }

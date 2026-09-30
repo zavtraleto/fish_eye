@@ -18,23 +18,24 @@ export interface StructureParams {
   maxChain: number;
 }
 
-// [decision 2026-09-30] a short ramp, then steep (GDD §13): levels 1–2 teach the loop,
+// [decision 2026-09-30] a short ramp, then steep (GDD §13): levels 1–2 teach the loop (at least
+// ~10 s to the EYE — playtest: 5–7 s was too quick),
 // from level 3 the structure grows by about four spaces a level into a tangled net.
 // nodes, loopNodes, routeNodes, extraCycles, minRoutes, minJunctions, maxChain — for
 // levels 1, 2, …; the last row repeats.
 const TABLE: readonly (readonly [number, number, number, number, number, number, number])[] = [
-  [7, 5, 3, 1, 1, 0.4, 3],
-  [9, 6, 3, 2, 1, 0.45, 2],
-  [14, 8, 4, 4, 2, 0.55, 2],
-  [18, 9, 5, 5, 2, 0.6, 2],
-  [22, 10, 5, 6, 3, 0.6, 2],
-  [26, 11, 6, 7, 3, 0.65, 2],
-  [30, 12, 6, 8, 3, 0.65, 2],
-  [34, 13, 7, 9, 3, 0.65, 2],
-  [38, 14, 7, 10, 3, 0.7, 2],
-  [42, 15, 8, 11, 3, 0.7, 2],
-  [46, 16, 8, 12, 3, 0.7, 2],
-  [50, 17, 9, 13, 3, 0.7, 2],
+  [10, 8, 5, 2, 1, 0.4, 3],
+  [12, 9, 5, 3, 1, 0.45, 2],
+  [16, 10, 6, 4, 2, 0.55, 2],
+  [20, 11, 6, 5, 2, 0.6, 2],
+  [24, 12, 7, 6, 3, 0.6, 2],
+  [28, 13, 7, 7, 3, 0.65, 2],
+  [32, 14, 8, 8, 3, 0.65, 2],
+  [36, 15, 8, 9, 3, 0.65, 2],
+  [40, 16, 9, 10, 3, 0.7, 2],
+  [44, 17, 9, 11, 3, 0.7, 2],
+  [48, 18, 10, 12, 3, 0.7, 2],
+  [52, 19, 10, 13, 3, 0.7, 2],
 ];
 
 /** The flesh of a level (GDD §6): how honestly its density leads from START to the heart. */

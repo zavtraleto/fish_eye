@@ -153,32 +153,61 @@ function ceilingField(f: GridFrame, cellZone: Int16Array, zones: readonly Zone[]
   return out;
 }
 
-/** Keeps the green line this far from walls where it has to bend, meters. */
-const ROUTE_CLEARANCE = 1.5;
+/**
+ * How the green line keeps off walls (GDD §10): first try wide — clear of the
+ * floor coves and the bulges (render) — then narrow where a passage is tight.
+ */
+const ROUTE_PASSES: readonly { clearance: number; margin: number }[] = [
+  { clearance: 3, margin: 2 },
+  { clearance: 1.5, margin: 0.5 },
+];
 
 /**
  * Points after `from` up to `to`: just `to` if the way is clear, else a path
- * over the nav raster pulled taut (each step to the farthest visible cell).
+ * over the nav raster pulled taut (each step to the farthest cell in sight).
  */
-function detour(nav: NavGrid, walls: SegmentIndex, from: Point, to: Point): Point[] {
-  if (lineOfSight(walls, from, to, 0.5)) return [to];
+function detour(nav: NavGrid, walls: SegmentIndex, from: Point, to: Point, clearance: number, margin: number): Point[] | null {
+  if (lineOfSight(walls, from, to, margin)) return [to];
   const field = new NavField(nav);
-  field.build(to.x, to.z, from.x, from.z, ROUTE_CLEARANCE);
+  field.build(to.x, to.z, from.x, from.z, clearance);
   const cells = field.descend(from.x, from.z, Infinity).map((c) => cellCenter(nav.frame, c));
-  if (!cells.length) throw new Error('the green line finds no way');
+  if (!cells.length) return null;
   const out: Point[] = [];
   let at = from;
   let i = 0;
   while (i < cells.length) {
     let j = cells.length - 1;
-    while (j > i && !lineOfSight(walls, at, cells[j]!, 0.5)) j--;
+    while (j > i && !lineOfSight(walls, at, cells[j]!, margin)) j--;
     at = cells[j]!;
     out.push(at);
     i = j + 1;
-    if (lineOfSight(walls, at, to, 0.5)) break;
+    if (lineOfSight(walls, at, to, margin)) break;
   }
   out.push(to);
   return out;
+}
+
+/**
+ * Rounds the green line's corners (Chaikin): each corner becomes two points a
+ * quarter along its legs, kept only where the new legs stay clear of walls.
+ */
+function smoothRoute(route: Point[], walls: SegmentIndex, passes: number): Point[] {
+  let line = route;
+  for (let p = 0; p < passes; p++) {
+    const out: Point[] = [line[0]!];
+    for (let i = 1; i + 1 < line.length; i++) {
+      const a = out[out.length - 1]!;
+      const c = line[i]!;
+      const n = line[i + 1]!;
+      const q = { x: c.x * 0.75 + a.x * 0.25, z: c.z * 0.75 + a.z * 0.25 };
+      const r = { x: c.x * 0.75 + n.x * 0.25, z: c.z * 0.75 + n.z * 0.25 };
+      if (lineOfSight(walls, a, q, 0.5) && lineOfSight(walls, q, r, 0.5) && lineOfSight(walls, r, n, 0.5)) out.push(q, r);
+      else out.push(c);
+    }
+    out.push(line[line.length - 1]!);
+    line = out;
+  }
+  return line;
 }
 
 function onSegment(s: Segment, p: Point): boolean {
@@ -391,8 +420,17 @@ export function buildLevel(def: LevelDef): Level {
     for (const p of hops(graph.route[i]!, graph.route[i + 1]!)) stops.push(p.mid);
     stops.push(zones[nodeZone(graph.route[i + 1]!)]!.anchor);
   }
-  const route: Point[] = [stops[0]!];
-  for (let i = 1; i < stops.length; i++) route.push(...detour(nav, wallIndex, route[route.length - 1]!, stops[i]!));
+  let route: Point[] = [stops[0]!];
+  for (let i = 1; i < stops.length; i++) {
+    let leg: Point[] | null = null;
+    for (const p of ROUTE_PASSES) {
+      leg = detour(nav, wallIndex, route[route.length - 1]!, stops[i]!, p.clearance, p.margin);
+      if (leg) break;
+    }
+    if (!leg) throw new Error('the green line finds no way');
+    route.push(...leg);
+  }
+  route = smoothRoute(route, wallIndex, 2);
   for (let i = 0; i + 1 < route.length; i++) if (!lineOfSight(wallIndex, route[i]!, route[i + 1]!)) throw new Error('the green line crosses a wall');
 
   // Spawn: SPAWN_DISTANCE off the white wall's middle, on the open side.

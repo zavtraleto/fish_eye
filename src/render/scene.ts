@@ -92,6 +92,8 @@ export class SceneRenderer {
   /**
    * Hides chunks the fog has swallowed whole (GDD §15.4): the plan distance
    * never exceeds the radial fog distance, so nothing visible is ever cut.
+   * World chunks stay out to the signal range too: they must hide the enemy,
+   * the EYE and the white wall behind them, which fade only at SIGNAL_FOG_FAR.
    */
   private cullLevel(): void {
     if (!this.levelMesh) return;
@@ -99,7 +101,7 @@ export class SceneRenderer {
     let tris = 0;
     for (const m of this.levelMesh.children as THREE.Mesh[]) {
       const b = m.userData.bounds as ChunkBounds;
-      m.visible = chunkDistance(b, this.eye.x, this.eye.z) < (b.signal ? v.SIGNAL_FOG_FAR : v.FOG_FAR) + v.CULL_MARGIN;
+      m.visible = chunkDistance(b, this.eye.x, this.eye.z) < Math.max(v.FOG_FAR, v.SIGNAL_FOG_FAR) + v.CULL_MARGIN;
       if (m.visible) tris += m.geometry.getAttribute('position').count / 3;
     }
     this.visibleTriangles = tris;
