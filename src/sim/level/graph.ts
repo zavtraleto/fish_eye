@@ -1,10 +1,10 @@
-// Room graph on the coarse grid (GDD §6, §7): a node is a room in one cell,
-// an edge a corridor between neighbouring cells (or across one empty cell).
+// Structure graph (GDD §6, §7): a node is a space, an edge a passage between two.
 
 export interface GraphRoom {
   id: number;
-  cx: number;
-  cz: number;
+  /** Anchor point of the space, meters. */
+  x: number;
+  z: number;
 }
 
 export interface GraphEdge {

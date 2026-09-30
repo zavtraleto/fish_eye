@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:gen": "vitest run tests/structure.test.ts --mode gen"
+    "test:gen": "vitest run tests/structure.test.ts tests/generate.test.ts --mode gen"
   },
   "dependencies": {
     "three": "^0.186.0",

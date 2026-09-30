@@ -122,6 +122,35 @@ export const DEFAULT_TUNING = {
     ROUTE_STRETCH: 1.5,
     /** Failed tries before the targets are relaxed one step. */
     GEN_MAX_ATTEMPTS: 200,
+    /** Hall size as a share of the distance to the nearest space (GDD §6: balance of halls and galleries). */
+    HALL_SIZE_MIN: 0.35,
+    HALL_SIZE_MAX: 0.45,
+    /** The heart is a bigger hall. */
+    HEART_SIZE: 0.5,
+    /** Corners of a hall polygon. */
+    HALL_CORNERS_MIN: 5,
+    HALL_CORNERS_MAX: 8,
+    GALLERY_WIDTH_MIN: 7,
+    GALLERY_WIDTH_MAX: 14,
+    THROAT_WIDTH_MIN: 5,
+    THROAT_WIDTH_MAX: 6,
+    /** Share of passages that are throats; never a bridge, so always avoidable. */
+    THROAT_CHANCE: 0.2,
+    /** The START box: width along the white wall, depth away from it. */
+    START_WIDTH: 20,
+    START_DEPTH: 18,
+    /** The white wall is at least this long (GDD §10). */
+    START_WALL_MIN: 12,
+    /** Ceilings, render only; every one clears a jump. */
+    HALL_HEIGHT_MIN: 10,
+    HALL_HEIGHT_MAX: 30,
+    GALLERY_HEIGHT_MIN: 6,
+    GALLERY_HEIGHT_MAX: 14,
+    THROAT_HEIGHT: 5,
+    START_HEIGHT: 8,
+    HEART_HEIGHT: 24,
+    /** Whole-level tries (graph + geometry) before falling back to the test level. */
+    LEVEL_TRIES: 20,
     /** Free-space raster step, meters: wall detail and floor tessellation. */
     SDF_CELL: 0.5,
     /** Enemy navigation raster step, meters. */

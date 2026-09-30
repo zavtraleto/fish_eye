@@ -10,7 +10,7 @@ Vite + TypeScript (strict) + Three.js. Target: desktop Chrome, keyboard + mouse,
 
 ## Status
 
-Phases 1–5 done (playtest and tuning come later, on a fuller prototype): movement, vertex fisheye, the run loop on a hand-made test level (`src/sim/level/fixed.ts` → `build.ts`), one-button moveset (`src/sim/move/`, GDD §5), the enemy (`src/sim/enemy.ts`, GDD §11), rear vision (`src/render/rearVision.ts`, GDD §12). Phase 6 (level structure) is designed (GDD §6–§8, brainstorming 2026-09-30) and split into stages 6.1–6.6 in `docs/plans/2026-09-30-structure.md`. Stage 6.1 done: the raster level model (shapes → field → contour → walls, floor, zones; wall index; enemy nav field), the test level built by it. Stage 6.2 done: the structure graph (`src/sim/level/gen/`, Delaunay + loop + ears, metrics; `?map=1` debug map). Next: stage 6.3, the skeleton geometry that turns the graph into a playable level.
+Phases 1–5 done (playtest and tuning come later, on a fuller prototype): movement, vertex fisheye, the run loop on a hand-made test level (`src/sim/level/fixed.ts` → `build.ts`), one-button moveset (`src/sim/move/`, GDD §5), the enemy (`src/sim/enemy.ts`, GDD §11), rear vision (`src/render/rearVision.ts`, GDD §12). Phase 6 (level structure) is designed (GDD §6–§8, brainstorming 2026-09-30) and split into stages 6.1–6.6 in `docs/plans/2026-09-30-structure.md`. Stage 6.1 done: the raster level model (shapes → field → contour → walls, floor, zones; wall index; enemy nav field), the test level built by it. Stage 6.2 done: the structure graph (`src/sim/level/gen/`, Delaunay + loop + ears, metrics; `?map=1` debug map). Stage 6.3 done: generated levels are played (`gen/skeleton.ts` halls, galleries, throats, START box; `gen/generate.ts`); `fixed.ts` stays for tests (`levels: fixedLevels`). Next: stage 6.4, fields and flesh.
 
 ## Language
 
@@ -25,7 +25,7 @@ npm run dev        # Vite dev server on :5173
 npm test           # Vitest, node environment
 npm run typecheck  # tsc --noEmit
 npm run build      # typecheck + production build into dist/
-npm run test:gen   # level generation invariants over 500 seeds
+npm run test:gen   # level generation invariants over many seeds (slow)
 ```
 
 Before every commit: `npm test` and `npm run build` must pass. Pushing to `main` runs `.github/workflows/deploy-pages.yml` (test → build → GitHub Pages); a red test blocks the deploy.

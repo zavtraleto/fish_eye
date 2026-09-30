@@ -53,9 +53,9 @@ let map: LevelMap | null = null;
 let logEvents = false;
 let debugOn = false;
 
-function restart(opts: { seed?: number | 'random' } = {}): void {
+function restart(opts: { seed?: number | 'random'; level?: number } = {}): void {
   const seed = opts.seed === 'random' ? randomSeed() : opts.seed ?? world.seed;
-  world = new World({ seed, cheats, startState: 'PLAYING' });
+  world = new World({ seed, cheats, startState: 'PLAYING', firstLevel: opts.level });
   input.clear();
   input.look.yaw = world.level.spawn.yaw;
   input.look.pitch = 0;
@@ -95,7 +95,10 @@ const actions: DebugActions = {
 async function toggleMap(): Promise<void> {
   if (!map) {
     const { LevelMap } = await import('./debug/levelMap');
-    map = new LevelMap(ui);
+    map = new LevelMap(ui, (seed, level) => {
+      restart({ seed, level });
+      map!.visible = false;
+    });
     map.visible = false;
   }
   map.visible = !map.visible;

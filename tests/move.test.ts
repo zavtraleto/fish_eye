@@ -8,6 +8,7 @@ import { rect, rectWalls, type Segment } from '../src/sim/level/geometry';
 import { yawTo } from '../src/sim/look';
 import { dashTicks, stepPlayer } from '../src/sim/move/motion';
 import { SegmentIndex } from '../src/sim/level/wallIndex';
+import { fixedLevels } from './helpers';
 import { bodyRange, dashAvailable } from '../src/sim/move/state';
 import { createPlayer, horizontalSpeed, type Player } from '../src/sim/player';
 import { World } from '../src/sim/world';
@@ -282,7 +283,7 @@ describe('moveset in the world', () => {
   beforeEach(() => mergeTuning(tuning, JSON.parse(JSON.stringify(DEFAULT_TUNING))));
 
   it('jumps on a Space press and reports it', () => {
-    const w = new World({ seed: 1, startState: 'PLAYING' });
+    const w = new World({ seed: 1, startState: 'PLAYING', levels: fixedLevels });
     w.step({ commands: [{ type: 'press', button: 'jump' }], held: { ...noButtons(), jump: true }, yaw: 0 });
     expect(w.events).toContainEqual({ type: 'jumped', kind: 'jump' });
     expect(w.player.move.mode).toBe('air');

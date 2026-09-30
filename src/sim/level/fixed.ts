@@ -23,17 +23,17 @@ const MIN_JAMB = 0.5;
 
 const GRAPH: LevelGraph = {
   rooms: [
-    { id: ID.S, cx: 0, cz: 0 },
-    { id: ID.A1, cx: 1, cz: 0 },
-    { id: ID.A2, cx: 2, cz: 0 },
-    { id: ID.A3, cx: 3, cz: 0 },
-    { id: ID.B3, cx: 3, cz: 1 },
-    { id: ID.EYE, cx: 3, cz: 2 },
-    { id: ID.C2, cx: 2, cz: 2 },
-    { id: ID.C1, cx: 1, cz: 2 },
-    { id: ID.C0, cx: 0, cz: 2 },
-    { id: ID.B0, cx: 0, cz: 1 },
-    { id: ID.B1, cx: 1, cz: 1 },
+    { id: ID.S, x: 0, z: 0 },
+    { id: ID.A1, x: 48, z: 0 },
+    { id: ID.A2, x: 96, z: 0 },
+    { id: ID.A3, x: 144, z: 0 },
+    { id: ID.B3, x: 144, z: 48 },
+    { id: ID.EYE, x: 144, z: 96 },
+    { id: ID.C2, x: 96, z: 96 },
+    { id: ID.C1, x: 48, z: 96 },
+    { id: ID.C0, x: 0, z: 96 },
+    { id: ID.B0, x: 0, z: 48 },
+    { id: ID.B1, x: 48, z: 48 },
   ],
   edges: [
     { a: ID.S, b: ID.A1 },

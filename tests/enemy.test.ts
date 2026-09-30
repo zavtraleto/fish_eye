@@ -6,14 +6,14 @@ import { graphDistances, graphPath, lineOfSight, nodeAnchor } from '../src/sim/l
 import { yawTo } from '../src/sim/look';
 import { createPlayer } from '../src/sim/player';
 import { World } from '../src/sim/world';
-import { idle, walk } from './helpers';
+import { fixedLevels, idle, walk } from './helpers';
 
 /** The big EYE room of the fixed level: rect(128, 83, 160, 113). */
 const EYE_ROOM = 5;
 const START_ROOM = 0;
 
 function playing(god = false): World {
-  return new World({ seed: 1, startState: 'PLAYING', cheats: { god } });
+  return new World({ seed: 1, startState: 'PLAYING', cheats: { god }, levels: fixedLevels });
 }
 
 /** Puts a hunting enemy at (x, z) facing the player. */

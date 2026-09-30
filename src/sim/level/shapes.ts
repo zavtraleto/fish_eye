@@ -1,4 +1,4 @@
-import type { Rect } from './geometry';
+import type { Point, Rect } from './geometry';
 import type { GridFrame } from './raster';
 
 // Free-space shapes of the skeleton (GDD §7 steps 7–8). The level's open
@@ -68,4 +68,58 @@ export function labelCells(shapes: readonly Shape[], f: GridFrame): Int16Array {
     }
   });
   return owner;
+}
+
+/** Distance from (x, z) to segment a–b. */
+function segDist(ax: number, az: number, bx: number, bz: number, x: number, z: number): number {
+  const dx = bx - ax;
+  const dz = bz - az;
+  const len2 = dx * dx + dz * dz;
+  const t = len2 > 0 ? Math.min(1, Math.max(0, ((x - ax) * dx + (z - az) * dz) / len2)) : 0;
+  return Math.hypot(x - ax - dx * t, z - az - dz * t);
+}
+
+/** A convex hall (GDD §6): depth is the distance to the nearest side, negative outside. */
+export function polygonShape(pts: readonly Point[]): Shape {
+  const bounds = {
+    x0: Math.min(...pts.map((p) => p.x)),
+    z0: Math.min(...pts.map((p) => p.z)),
+    x1: Math.max(...pts.map((p) => p.x)),
+    z1: Math.max(...pts.map((p) => p.z)),
+  };
+  return {
+    bounds,
+    inside(x, z) {
+      let d = Infinity;
+      let inside = false;
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const a = pts[j]!;
+        const b = pts[i]!;
+        d = Math.min(d, segDist(a.x, a.z, b.x, b.z, x, z));
+        if (a.z > z !== b.z > z && x < ((b.x - a.x) * (z - a.z)) / (b.z - a.z) + a.x) inside = !inside;
+      }
+      return inside ? d : -d;
+    },
+  };
+}
+
+/** A straight passage from a to b, `width` wide (GDD §6: gallery, throat). */
+export function stripShape(a: Point, b: Point, width: number): Shape {
+  const len = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+  const dx = (b.x - a.x) / len;
+  const dz = (b.z - a.z) / len;
+  const h = width / 2;
+  const cx = [a.x - dz * h, a.x + dz * h, b.x - dz * h, b.x + dz * h];
+  const cz = [a.z + dx * h, a.z - dx * h, b.z + dx * h, b.z - dx * h];
+  return {
+    bounds: { x0: Math.min(...cx), z0: Math.min(...cz), x1: Math.max(...cx), z1: Math.max(...cz) },
+    inside(x, z) {
+      const u = (x - a.x) * dx + (z - a.z) * dz;
+      const v = Math.abs(-(x - a.x) * dz + (z - a.z) * dx);
+      const du = Math.min(u, len - u);
+      const dv = h - v;
+      if (du >= 0 && dv >= 0) return Math.min(du, dv);
+      return -Math.hypot(Math.max(0, -du), Math.max(0, -dv));
+    },
+  };
 }

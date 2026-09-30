@@ -2,6 +2,9 @@ import { tuning } from '../src/config/tuning';
 import { noButtons, type Command } from '../src/core/input/commands';
 import { closestOnSegment, type Point, type Segment } from '../src/sim/level/geometry';
 import { yawTo } from '../src/sim/look';
+import { buildLevel } from '../src/sim/level/build';
+import { fixedLevel } from '../src/sim/level/fixed';
+import type { Level } from '../src/sim/level/level';
 import type { World } from '../src/sim/world';
 
 /** Minimum distance from a point to any wall. */
@@ -35,4 +38,9 @@ export function walk(world: World, points: readonly Point[], done: () => boolean
     ticks++;
   }
   return ticks;
+}
+
+/** The hand-made test level for every level number: tests place things by its coordinates. */
+export function fixedLevels(): Level {
+  return buildLevel(fixedLevel());
 }

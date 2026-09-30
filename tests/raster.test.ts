@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { rect } from '../src/sim/level/geometry';
 import { cellAt, cellCenter, frameAround, nodePoint, sampleNodes } from '../src/sim/level/raster';
-import { boxShape, labelCells, sampleField } from '../src/sim/level/shapes';
+import { boxShape, labelCells, polygonShape, sampleField, stripShape } from '../src/sim/level/shapes';
 
 describe('raster (GDD §7, §8)', () => {
   it('frames bounds on multiples of the cell, with a margin', () => {
@@ -45,5 +45,34 @@ describe('raster (GDD §7, §8)', () => {
     expect(owner[cellAt(f, 5, 5)]).toBe(0);
     expect(owner[cellAt(f, 15, 5)]).toBe(1);
     expect(owner[cellAt(f, -1.9, -1.9)]).toBe(-1);
+  });
+});
+
+describe('skeleton shapes (GDD §6)', () => {
+  it('a polygon is deepest inside and negative outside', () => {
+    const tri = polygonShape([
+      { x: 0, z: 0 },
+      { x: 10, z: 0 },
+      { x: 0, z: 10 },
+    ]);
+    expect(tri.inside(1, 1)).toBeCloseTo(1);
+    expect(tri.inside(-2, 1)).toBeCloseTo(-2);
+    expect(tri.inside(10, 10)).toBeCloseTo(-Math.SQRT2 * 5);
+  });
+
+  it('a strip matches a box when axis-aligned, and works at any angle', () => {
+    const s = stripShape({ x: 0, z: 0 }, { x: 10, z: 0 }, 4);
+    const b = boxShape(rect(0, -2, 10, 2));
+    for (const [x, z] of [
+      [5, 0],
+      [1, 1.5],
+      [-1, 0],
+      [12, 5],
+    ] as const)
+      expect(s.inside(x, z)).toBeCloseTo(b.inside(x, z));
+    const d = stripShape({ x: 0, z: 0 }, { x: 10, z: 10 }, 4);
+    expect(d.inside(5, 5)).toBeCloseTo(2);
+    expect(d.inside(5 - 2 * Math.SQRT1_2, 5 + 2 * Math.SQRT1_2)).toBeCloseTo(0);
+    expect(d.bounds.x0).toBeCloseTo(-Math.SQRT2);
   });
 });

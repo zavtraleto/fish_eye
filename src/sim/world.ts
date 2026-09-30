@@ -3,9 +3,8 @@ import type { Command, HeldButtons } from '../core/input/commands';
 import { Rng } from '../core/rng';
 import { chooseSpawnNode, createEnemy, enemyTouches, stepEnemy, type Enemy } from './enemy';
 import type { SimEvent } from './events';
-import { buildLevel } from './level/build';
 import { closestOnSegment } from './level/geometry';
-import { fixedLevel } from './level/fixed';
+import { generateLevel } from './level/gen/generate';
 import type { Level } from './level/level';
 import { locate, nodeAnchor, zoneNode } from './level/query';
 import { yawTo } from './look';
@@ -14,7 +13,7 @@ import { createPlayer, type Player } from './player';
 import { newRunStats, type RunStats } from './run';
 
 // Pure simulation (GDD §15.1): no DOM, no Three.js, no Math.random().
-// The run loop of GDD §2 and §14 on the fixed test level (plan task 2).
+// The run loop of GDD §2 and §14 over generated levels (GDD §7).
 
 export type WorldState = 'TITLE' | 'PLAYING' | 'LEVEL_CLEAR' | 'DEAD' | 'PAUSED';
 export type Phase = 'INWARD' | 'ESCAPE';
@@ -28,6 +27,10 @@ export interface WorldOptions {
   cheats?: Cheats;
   /** A restart skips the title (GDD §14.3). */
   startState?: 'TITLE' | 'PLAYING';
+  /** Builds level N of the run; generation by default (GDD §7). Tests pass the fixed level. */
+  levels?: (seed: number, n: number) => Level;
+  /** Debug: the run starts at this level. */
+  firstLevel?: number;
 }
 
 export interface StepInput {
@@ -62,13 +65,17 @@ export class World {
   readonly events: SimEvent[] = [];
   private resumeState: WorldState = 'PLAYING';
   private readonly rngEnemy: Rng;
+  private readonly levels: (seed: number, n: number) => Level;
+  /** The next level, built while the level-clear screen shows. */
+  private nextLevel: Level | null = null;
 
   constructor(opts: WorldOptions) {
     this.seed = opts.seed;
     this.cheats = opts.cheats ?? { god: false };
     this.rngEnemy = new Rng(opts.seed).fork('enemy');
     this.state = opts.startState ?? 'TITLE';
-    this.startLevel(1);
+    this.levels = opts.levels ?? ((seed, n) => generateLevel(seed, n).level);
+    this.startLevel(opts.firstLevel ?? 1);
     if (this.state === 'PLAYING') this.events.push({ type: 'runStarted' });
   }
 
@@ -87,9 +94,13 @@ export class World {
     if (this.state !== 'PAUSED') this.stateTicks++;
 
     if (this.state === 'PLAYING') this.play(input);
-    else if (this.state === 'LEVEL_CLEAR' && this.stateTicks >= T(tuning.run.LEVEL_CLEAR_TIME)) {
-      this.startLevel(this.levelNumber + 1);
-      this.setState('PLAYING');
+    else if (this.state === 'LEVEL_CLEAR') {
+      // The screen is up: build the next level now, not when play resumes.
+      this.nextLevel ??= this.buildLevel(this.levelNumber + 1);
+      if (this.stateTicks >= T(tuning.run.LEVEL_CLEAR_TIME)) {
+        this.startLevel(this.levelNumber + 1);
+        this.setState('PLAYING');
+      }
     }
   }
 
@@ -135,9 +146,8 @@ export class World {
 
   private startLevel(n: number): void {
     this.levelNumber = n;
-    const t0 = performance.now();
-    this.level = buildLevel(fixedLevel());
-    this.levelBuildMs = performance.now() - t0;
+    this.level = this.nextLevel ?? this.buildLevel(n);
+    this.nextLevel = null;
     const { x, z } = this.level.spawn;
     this.player = createPlayer(x, z);
     this.enemy = null;
@@ -145,6 +155,13 @@ export class World {
     this.inwardTicks = 0;
     this.escapeTicks = 0;
     this.events.push({ type: 'levelStarted', level: n });
+  }
+
+  private buildLevel(n: number): Level {
+    const t0 = performance.now();
+    const level = this.levels(this.seed, n);
+    this.levelBuildMs = performance.now() - t0;
+    return level;
   }
 
   private play(input: StepInput): void {

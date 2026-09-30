@@ -2,9 +2,9 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_TUNING, mergeTuning, secondsToTicks as T, tuning } from '../src/config/tuning';
 import { isBetterRun } from '../src/sim/run';
 import { World } from '../src/sim/world';
-import { idle, walk } from './helpers';
+import { fixedLevels, idle, walk } from './helpers';
 
-const playing = () => new World({ seed: 1, startState: 'PLAYING' });
+const playing = () => new World({ seed: 1, startState: 'PLAYING', levels: fixedLevels });
 
 /** Runs the green line to the EYE, then back along it to the white wall. */
 function clearLevel(w: World): void {
@@ -19,7 +19,7 @@ describe('run loop (GDD §2, §14)', () => {
   beforeEach(() => mergeTuning(tuning, JSON.parse(JSON.stringify(DEFAULT_TUNING))));
 
   it('waits on the title until a click', () => {
-    const w = new World({ seed: 1 });
+    const w = new World({ seed: 1, levels: fixedLevels });
     idle(w, 10);
     expect(w.state).toBe('TITLE');
     expect(w.tick).toBe(0);
@@ -64,6 +64,25 @@ describe('run loop (GDD §2, §14)', () => {
     expect(w.player.x).toBe(w.level.spawn.x);
   });
 
+  it('builds the next level while the level-clear screen shows, not when play resumes', () => {
+    const built: number[] = [];
+    const w = new World({ seed: 1, startState: 'PLAYING', levels: (_, n) => (built.push(n), fixedLevels()) });
+    expect(built).toEqual([1]);
+    clearLevel(w);
+    idle(w, 1);
+    expect(built).toEqual([1, 2]);
+    idle(w, T(tuning.run.LEVEL_CLEAR_TIME));
+    expect(w.levelNumber).toBe(2);
+    expect(built).toEqual([1, 2]);
+  });
+
+  it('plays generated levels by default (GDD §7)', () => {
+    const w = new World({ seed: 7, startState: 'PLAYING', firstLevel: 3 });
+    expect(w.levelNumber).toBe(3);
+    expect(w.level.zones.length).toBeGreaterThan(8);
+    expect(w.level.route.length).toBeGreaterThan(2);
+  });
+
   it('freezes gameplay and state timers while paused', () => {
     const w = playing();
     idle(w, 5);
@@ -106,7 +125,7 @@ describe('run loop (GDD §2, §14)', () => {
   });
 
   it('god mode survives a kill', () => {
-    const w = new World({ seed: 1, startState: 'PLAYING', cheats: { god: true } });
+    const w = new World({ seed: 1, startState: 'PLAYING', cheats: { god: true }, levels: fixedLevels });
     w.kill();
     expect(w.state).toBe('PLAYING');
   });

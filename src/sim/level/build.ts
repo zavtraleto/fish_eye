@@ -2,7 +2,7 @@ import { tuning } from '../../config/tuning';
 import { yawTo } from '../look';
 import { contour, edgeCrossing } from './contour';
 import { closestOnSegment, segmentLength, type Point, type Rect, type Segment } from './geometry';
-import type { LevelGraph } from './graph';
+import { hasEdge, type LevelGraph } from './graph';
 import type { FloorPiece, Level, ModuleKind, Portal, WallFace, Zone, ZoneRef } from './level';
 import type { NavGrid } from './nav';
 import { cellAt, cellCenter, frameAround, sampleNodes, type GridFrame } from './raster';
@@ -94,7 +94,7 @@ function openSpan(f: GridFrame, field: Float32Array, ia: number, ja: number, ib:
 const dist = (p: Point, q: Point) => Math.hypot(p.x - q.x, p.z - q.z);
 
 function onSegment(s: Segment, p: Point): boolean {
-  return dist(closestOnSegment(s, p.x, p.z), p) < 1e-6;
+  return dist(closestOnSegment(s, p.x, p.z), p) < 1e-4;
 }
 
 export function buildLevel(def: LevelDef): Level {
@@ -146,8 +146,9 @@ export function buildLevel(def: LevelDef): Level {
     walls.push(e.seg);
     faces.push({ seg: e.seg, y0: 0, y1: zone.height, kind: white ? 'start' : 'wall', nx: e.nx, nz: e.nz });
   }
-  // The contour cuts each corner by up to one cell.
-  if (whiteLength < segmentLength(def.startWall) - 2 * frame.cell - 1e-6) throw new Error('the white wall is not on the contour');
+  // The contour cuts each corner by up to two cells when the wall is not axis-aligned;
+  // a passage through the wall takes far more (MIN_CLEARANCE).
+  if (whiteLength < segmentLength(def.startWall) - 4 * frame.cell - 1e-6) throw new Error('the white wall is not on the contour');
 
   // Portals and ceiling steps along grid edges between cells of different zones.
   const spans = new Map<string, { a: number; b: number; pts: Point[]; mx: number; mz: number; len: number }>();
@@ -189,6 +190,14 @@ export function buildLevel(def: LevelDef): Level {
     const mid = s.len > 0 ? { x: s.mx / s.len, z: s.mz / s.len } : { x: (p0.x + p1.x) / 2, z: (p0.z + p1.z) / 2 };
     return { a: s.a, b: s.b, p0, p1, mid };
   });
+  // No passage the graph does not have (GDD §7 step 9): zones may meet only if they share a node.
+  const ends = (r: ZoneRef) => (r.kind === 'node' ? [r.node] : [r.a, r.b]);
+  for (const p of portals) {
+    const ra = zones[p.a]!.ref;
+    const rb = zones[p.b]!.ref;
+    const ok = ra.kind === 'node' && rb.kind === 'node' ? hasEdge(graph, ra.node, rb.node) : ends(ra).some((n) => ends(rb).includes(n));
+    if (!ok) throw new Error(`zones ${refKey(ra)} and ${refKey(rb)} meet, but the graph has no such passage`);
+  }
   const portal = (a: number, b: number): Portal | undefined => portals.find((p) => (p.a === a && p.b === b) || (p.a === b && p.b === a));
 
   // Every graph edge must open: room–corridor–room, or room–room directly.
