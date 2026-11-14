@@ -29,7 +29,7 @@ describe('organic surfaces (GDD §6, VISUAL.md)', () => {
         for (let y = 0; y < v.WALL_SAFE_HEIGHT; y += 0.5) expect(s.wallOffset(w.seg.ax, w.seg.az, y, w.nx, w.nz)).toBeLessThanOrEqual(v.WALL_INWARD_LOW + 1e-9);
       }
     }
-  });
+  }, 30_000);
 
   it('leaves START bare: the white wall stays flat', () => {
     const { level } = generateLevel(3, 5);

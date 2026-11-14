@@ -99,7 +99,14 @@ export const DEFAULT_TUNING = {
     /** Harmless after appearing. */
     SPAWN_MATERIALIZE: 0.6,
     /** First level with an enemy. */
-    FIRST_LEVEL: 2,
+    FIRST_LEVEL: 1,
+    /** Ambush spawn: meters of walking from the player, out of sight, ahead of the view (GDD §11.6). */
+    AMBUSH_MIN: 14,
+    AMBUSH_MAX: 26,
+    /** Where nothing hides that close (an open hall), the ring moves outward up to this. */
+    AMBUSH_FAR: 70,
+    /** One of this many best-in-front hidden cells is picked. */
+    AMBUSH_PICK: 6,
     /** The nav field is rebuilt at most this often, and only when the player changed cell. */
     REPATH_TIME: 0.25,
     /** Meters of nav path ahead the enemy may cut to in a straight line. */
@@ -237,12 +244,18 @@ export const DEFAULT_TUNING = {
   rear: {
     /** Proxies show for enemies closer than this; covers CHARGE_RANGE_MAX. */
     PROXY_RANGE: 40,
-    OPACITY: 0.6,
+    OPACITY: 0.4,
     /** Without a line of sight: dimmer, shakier. */
-    HIDDEN_OPACITY: 0.25,
+    HIDDEN_OPACITY: 0.18,
     /** Per-frame shake, meters. */
     JITTER: 0.1,
     HIDDEN_JITTER: 0.6,
+    /** Hologram look, 0..1: torn horizontal bands and frame skips. */
+    GLITCH: 0.5,
+    /** Static: grainy alpha and dropped pixels. */
+    NOISE: 0.5,
+    /** Dark screen-space scanlines. */
+    SCANLINES: 0.5,
   },
   /** GDD §4: vertex fisheye. */
   camera: {

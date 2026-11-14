@@ -79,6 +79,53 @@ export function chooseSpawnNode(level: Level, playerNode: number, pick: (n: numb
   return best[pick(best.length)] ?? playerNode;
 }
 
+/**
+ * Ambush spawn (GDD §11.6): a cell out of the player's sight, AMBUSH_MIN..AMBUSH_MAX
+ * nav steps away (the ring moves outward to AMBUSH_FAR if nothing hides),
+ * as far in front of the view as the ring allows; one of the best
+ * AMBUSH_PICK picked by `pick`. Null if no cell qualifies.
+ */
+export function chooseAmbushPoint(level: Level, p: Point, yaw: number, pick: (n: number) => number): Point | null {
+  const c = tuning.enemy;
+  const f = level.nav.frame;
+  const field = new NavField(level.nav);
+  field.build(p.x, p.z, Infinity, Infinity, c.RADIUS);
+  const { fx, fz } = yawAxes(yaw);
+  const width = Math.max(1, c.AMBUSH_MAX - c.AMBUSH_MIN);
+  for (let lo = c.AMBUSH_MIN; lo < Math.max(c.AMBUSH_MAX, c.AMBUSH_FAR); lo += width) {
+    const ranked: { cell: number; front: number }[] = [];
+    for (let cell = 0; cell < f.w * f.h; cell++) {
+      const m = field.stepsAt(cell) * f.cell;
+      if (m < lo || m > lo + width || level.nav.clearance[cell]! < c.RADIUS) continue;
+      const q = cellCenter(f, cell);
+      const d = Math.hypot(q.x - p.x, q.z - p.z) || 1;
+      ranked.push({ cell, front: ((q.x - p.x) * fx + (q.z - p.z) * fz) / d });
+    }
+    ranked.sort((a, b) => b.front - a.front || a.cell - b.cell);
+    const hidden: Point[] = [];
+    for (const { cell } of ranked) {
+      const q = cellCenter(f, cell);
+      if (outOfSight(level, p, q, c.RADIUS)) hidden.push(q);
+      if (hidden.length >= c.AMBUSH_PICK) break;
+    }
+    if (hidden.length) return hidden[pick(hidden.length)]!;
+  }
+  return null;
+}
+
+/** No ray from the player to the body's centre or either side passes. */
+function outOfSight(level: Level, p: Point, q: Point, radius: number): boolean {
+  const dx = q.x - p.x;
+  const dz = q.z - p.z;
+  const len = Math.hypot(dx, dz) || 1;
+  const nx = (-dz / len) * radius;
+  const nz = (dx / len) * radius;
+  for (const k of [0, 1, -1]) {
+    if (lineOfSight(level.wallIndex, p, { x: q.x + nx * k, z: q.z + nz * k })) return false;
+  }
+  return true;
+}
+
 function setState(e: Enemy, state: EnemyState, tick: number): void {
   e.state = state;
   e.stateTick = tick;

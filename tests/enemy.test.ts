@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_TUNING, mergeTuning, secondsToTicks as T, tuning } from '../src/config/tuning';
 import { noButtons } from '../src/core/input/commands';
-import { chooseSpawnNode, createEnemy, enemyTouches, type Enemy } from '../src/sim/enemy';
+import { chooseAmbushPoint, chooseSpawnNode, createEnemy, enemyTouches, type Enemy } from '../src/sim/enemy';
 import { graphDistances, graphPath, lineOfSight, nodeAnchor } from '../src/sim/level/query';
 import { yawTo } from '../src/sim/look';
 import { createPlayer } from '../src/sim/player';
@@ -73,7 +73,38 @@ describe('enemy (GDD §11)', () => {
     expect(dist.get(room)).toBe(Math.min(...fair.map((id) => dist.get(id)!)));
   });
 
+  it('ambushes out of sight, a short walk away, toward the view', () => {
+    for (const seed of [1, 2, 3]) {
+      const w = new World({ seed, startState: 'PLAYING', cheats: { god: true } });
+      for (const yaw of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+        const p = w.player;
+        const q = chooseAmbushPoint(w.level, p, yaw, () => 0);
+        expect(q, `seed ${seed}`).not.toBeNull();
+        expect(lineOfSight(w.level.wallIndex, p, q!)).toBe(false);
+        // Nav steps count diagonals as one cell.
+        expect(Math.hypot(q!.x - p.x, q!.z - p.z)).toBeLessThanOrEqual(Math.SQRT2 * (tuning.enemy.AMBUSH_FAR + tuning.enemy.AMBUSH_MAX));
+      }
+    }
+  }, 30_000);
+
+  it('meets the player within a few seconds of taking the EYE', () => {
+    for (const seed of [1, 2, 3]) {
+      const w = new World({ seed, startState: 'PLAYING', cheats: { god: true } });
+      walk(w, w.level.route, () => w.phase === 'ESCAPE', 240);
+      expect(w.enemy, `seed ${seed}`).not.toBeNull();
+      const e = w.enemy!;
+      let ticks = 0;
+      while (!lineOfSight(w.level.wallIndex, w.player, e) && ticks < T(6)) {
+        idle(w);
+        ticks++;
+      }
+      expect(ticks, `seed ${seed}`).toBeGreaterThan(0);
+      expect(ticks, `seed ${seed}`).toBeLessThan(T(6));
+    }
+  }, 30_000);
+
   it('appears when the EYE is taken from FIRST_LEVEL on', () => {
+    tuning.enemy.FIRST_LEVEL = 2;
     const w = playing();
     walk(w, w.level.route, () => w.phase === 'ESCAPE');
     expect(w.enemy).toBeNull();

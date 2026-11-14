@@ -1,7 +1,7 @@
 import { secondsToTicks as T, tuning } from '../config/tuning';
 import type { Command, HeldButtons } from '../core/input/commands';
 import { Rng } from '../core/rng';
-import { chooseSpawnNode, createEnemy, enemyTouches, stepEnemy, type Enemy } from './enemy';
+import { chooseAmbushPoint, chooseSpawnNode, createEnemy, enemyTouches, stepEnemy, type Enemy } from './enemy';
 import type { SimEvent } from './events';
 import { closestOnSegment } from './level/geometry';
 import { generateLevel } from './level/gen/generate';
@@ -58,6 +58,8 @@ export class World {
   player!: Player;
   /** Appears when the EYE is taken, from level `FIRST_LEVEL` (GDD §11.6). */
   enemy: Enemy | null = null;
+  /** View yaw of the last step; the ambush spawn looks ahead of it (GDD §11.6). */
+  yaw = 0;
   /** Current level's INWARD and ESCAPE times, ticks. */
   inwardTicks = 0;
   escapeTicks = 0;
@@ -95,6 +97,7 @@ export class World {
 
   step(input: StepInput): void {
     this.uiTick++;
+    this.yaw = input.yaw;
     for (const cmd of input.commands) this.command(cmd);
     if (this.state !== 'PAUSED') this.stateTicks++;
 
@@ -116,13 +119,16 @@ export class World {
     this.events.push({ type: 'died' });
   }
 
-  /** Puts the enemy in a fair node (GDD §11.6); debug can call it any time. */
+  /** Ambush out of sight ahead of the view, else a fair node (GDD §11.6); debug can call it any time. */
   spawnEnemy(): void {
     const p = this.player;
-    const zone = locate(this.level, p.x, p.z);
-    const playerNode = zone ? zoneNode(zone) : this.level.graph.eye;
-    const node = chooseSpawnNode(this.level, playerNode, (n) => this.rngEnemy.int(0, n - 1));
-    const c = nodeAnchor(this.level, node);
+    const pick = (n: number) => this.rngEnemy.int(0, n - 1);
+    let c = chooseAmbushPoint(this.level, p, this.yaw, pick);
+    if (!c) {
+      const zone = locate(this.level, p.x, p.z);
+      const playerNode = zone ? zoneNode(zone) : this.level.graph.eye;
+      c = nodeAnchor(this.level, chooseSpawnNode(this.level, playerNode, pick));
+    }
     this.enemy = createEnemy(c.x, c.z, yawTo(p.x - c.x, p.z - c.z), this.tick);
     this.events.push({ type: 'enemySpawned' });
   }
